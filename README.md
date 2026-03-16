@@ -31,10 +31,28 @@ Pass the notes and the key as arguments for a quick mapping:
 dotnet run "C, E, G, B" "C Major"
 ```
 
+## CI/CD and Releases
+This project uses GitHub Actions for Continuous Integration and Continuous Deployment.
+- **CI**: Every push or pull request to `main` triggers a build and a full test suite run.
+- **CD**: Pushing a tag starting with `v` (e.g., `v1.0.0`) automatically builds, tests, and publishes self-contained binaries for Windows, Linux, and macOS to the GitHub Releases page.
+
 ## Supported Chords
 The tool identifies and parses a wide variety of chord structures:
 - **Triads**: Major, Minor, Diminished, Augmented, Sus4, Sus2.
 - **7th Chords**: Major 7th, Minor 7th, Dominant 7th, Diminished 7th, Half-Diminished (`m7b5`).
+
+## Development Workflow
+
+To ensure a high level of stability, the project uses a standard **Trunk-Based Development** model:
+
+1.  **Feature Branches**: Create a branch for any new feature or bugfix (e.g., `feat/my-new-feature`).
+2.  **Pull Request**: Merge your branch into `main` via a PR. The **CI/CD pipeline** automatically runs all 26 unit tests.
+3.  **Release**: When you are ready to publish a new version, simply create and push a git tag:
+    ```bash
+    git tag v1.0.0
+    git push origin v1.0.0
+    ```
+    GitHub Actions will then build, test, and attach portable binaries for Windows, Linux, and macOS to a new release on the GitHub project page.
 
 ## Technical Details
 - Built with **.NET 10** and **C# 14**.
