@@ -17,22 +17,37 @@ public class KeyContext
 
     public static KeyContext Parse(string keyString)
     {
-        var parts = keyString.Trim().Split(' ', StringSplitOptions.RemoveEmptyEntries);
+        keyString = keyString.Trim();
+        var parts = keyString.Split(' ', StringSplitOptions.RemoveEmptyEntries);
         var tonicPart = parts[0];
+        var modeStrFromParts = parts.Length > 1 ? parts[1] : null;
+
+        // Check if tonicPart itself contains mode information (e.g., "Dm", "C#m")
+        // But only if there is NO second part with a mode.
+        if (modeStrFromParts == null)
+        {
+            var match = System.Text.RegularExpressions.Regex.Match(tonicPart, @"^([A-G][#|b|#|#|b|b]*)([m|min|minor|maj|major|ionian|aeolian|dorian|phrygian|lydian|mixolydian|locrian].*)$", System.Text.RegularExpressions.RegexOptions.IgnoreCase);
+            if (match.Success)
+            {
+                tonicPart = match.Groups[1].Value;
+                modeStrFromParts = match.Groups[2].Value;
+            }
+        }
+
         var tonic = Note.Parse($"{tonicPart}4");
         var mode = Mode.Major;
 
-        if (parts is [_, var modeStr, ..])
+        if (!string.IsNullOrEmpty(modeStrFromParts))
         {
-            mode = modeStr.ToLower() switch
+            mode = modeStrFromParts.ToLower() switch
             {
-                "maj" or "major" or "ionian" => Mode.Major,
-                "m" or "min" or "minor" or "aeolian" => Mode.Minor,
-                "dorian" => Mode.Dorian,
-                "phrygian" => Mode.Phrygian,
-                "lydian" => Mode.Lydian,
-                "mixolydian" => Mode.Mixolydian,
-                "locrian" => Mode.Locrian,
+                var s when s.StartsWith("maj") || s == "ionian" => Mode.Major,
+                var s when s.StartsWith("m") || s.StartsWith("min") || s == "aeolian" => Mode.Minor,
+                var s when s.StartsWith("dorian") => Mode.Dorian,
+                var s when s.StartsWith("phrygian") => Mode.Phrygian,
+                var s when s.StartsWith("lydian") => Mode.Lydian,
+                var s when s.StartsWith("mixolydian") => Mode.Mixolydian,
+                var s when s.StartsWith("locrian") => Mode.Locrian,
                 _ => Mode.Major
             };
         }
