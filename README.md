@@ -1,4 +1,6 @@
-﻿# Negative Harmony Assistant
+beware AI slop down below
+ 
+# Negative Harmony Assistant
 
 A sophisticated command-line tool for musicians to explore **Negative Harmony**. It allows you to map notes and chord progressions across the Tonic-Dominant axis, providing diatonically correct results and intelligent chord identification.
 
