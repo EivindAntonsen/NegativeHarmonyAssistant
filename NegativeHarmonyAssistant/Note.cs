@@ -123,6 +123,11 @@ public class Note
 
     public static Note FromAbsolutePitch(int absolutePitch, KeyContext? context = null, bool? preferSharps = null)
     {
+        // Cap absolute pitch to stay within valid octave range (0 to 8)
+        // Octave 0 starts at C0 (pitch 12). Octave 8 ends at B8 (pitch 119).
+        if (absolutePitch < 12) absolutePitch = 12 + (absolutePitch % 12 + 12) % 12;
+        if (absolutePitch > 119) absolutePitch = 108 + (absolutePitch % 12);
+
         var pc = absolutePitch % 12;
         if (pc < 0) pc += 12;
         var octaveValue = (int)Math.Floor(absolutePitch / 12.0) - 1;

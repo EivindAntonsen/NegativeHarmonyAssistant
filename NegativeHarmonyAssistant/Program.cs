@@ -346,46 +346,51 @@ public class Program
                     var currentPitch = previous.AbsolutePitch;
                     var nextPitch = currentPitch;
                     
-                    // Find the nearest note (either up, down, or same)
-                    // We want to minimize the interval to the next note.
-                    // If we only go UP, we might hit the octave limit quickly.
+                    // Style 2 expects that notes are chosen as the nearest pitch from the previous note.
+                    // This can however lead to octave creep in long sequences if they are mostly ascending.
+                    // BUT, if the sequence is mostly diatonic, it should stay within a reasonable range.
+                    // Let's refine the "nearest" logic to actually pick the nearest absolute pitch.
                     
                     var possiblePitches = new[] { 
                         currentPitch + (targetPitchClass - currentPitch % 12 + 12) % 12, // UP or same
                         currentPitch + (targetPitchClass - currentPitch % 12 - 12) % 12  // DOWN or same
                     };
                     
-                    // Tie-break: Prefer UP if distances are equal
-                    if (Math.Abs(possiblePitches[0] - currentPitch) < Math.Abs(possiblePitches[1] - currentPitch))
+                    // Choose the one that is closer to currentPitch
+                    if (Math.Abs(possiblePitches[0] - currentPitch) <= Math.Abs(possiblePitches[1] - currentPitch))
                     {
                         nextPitch = possiblePitches[0];
                     }
-                    else if (Math.Abs(possiblePitches[1] - currentPitch) < Math.Abs(possiblePitches[0] - currentPitch))
+                    else
                     {
                         nextPitch = possiblePitches[1];
                     }
-                    else
+                    
+                    // If we're hitting boundaries (Octave 0 or 8), we should cap it.
+                    if (nextPitch < 12) // Below C0 (12)
                     {
-                        // Equidistant. Prefer SAME octave if possible.
-                        // Actually, if they are equidistant from currentPitch, they can't both be in the same octave as currentPitch.
-                        // One must be above and one below.
-                        // The user's test expects "C", "C" to stay in octave 4.
-                        // If current is C4 (60). Next C can be C4 (60) or C3 (48) or C5 (72).
-                        // distance to 60 is 0. Distance to 48 is 12. Distance to 72 is 12.
-                        // So 60 is the unique minimum.
-                        
-                        // What if we are at F4 (65)? Next B could be B4 (71) or B3 (59).
-                        // Dist to 71 is 6. Dist to 59 is 6.
-                        // In this case, prefer UP to match previous behavior for non-C notes?
-                        nextPitch = possiblePitches[0]; 
+                        nextPitch += 12;
+                    }
+                    else if (nextPitch > 107) // Above B8 (107)
+                    {
+                        nextPitch -= 12;
                     }
                     
-                    var note = Note.FromAbsolutePitch(nextPitch);
+                    // Determine the letter name for the next note
+                    var targetNoteName = tempNote.NoteName;
+                    var basePC = GetBasePitchClass(targetNoteName);
+                    var pc = nextPitch % 12;
+                    if (pc < 0) pc += 12;
+                    
+                    var diff = pc - basePC;
+                    while (diff > 6) diff -= 12;
+                    while (diff < -6) diff += 12;
+                    
                     var finalNote = new Note
                     {
-                        NoteName = tempNote.NoteName,
-                        Accidental = tempNote.Accidental,
-                        Octave = note.Octave
+                        NoteName = targetNoteName,
+                        Accidental = diff == 0 ? null : (Accidental)diff,
+                        Octave = (nextPitch / 12) - 1
                     };
                     
                     result.Add(finalNote);
@@ -396,6 +401,18 @@ public class Program
 
         return result;
     }
+
+    private static int GetBasePitchClass(NoteName name) => name switch
+    {
+        NoteName.C => 0,
+        NoteName.D => 2,
+        NoteName.E => 4,
+        NoteName.F => 5,
+        NoteName.G => 7,
+        NoteName.A => 9,
+        NoteName.B => 11,
+        _ => throw new ArgumentOutOfRangeException(nameof(name))
+    };
 
     private static bool IsChordHeuristic(string input)
     {
