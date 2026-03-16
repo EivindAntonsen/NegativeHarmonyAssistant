@@ -26,7 +26,7 @@ public class NegativeHarmonyTests
     public void D_F_A_C_InCMinorKey_ShouldResultIn_Sorted_G3_Bb3_D4_F4()
     {
         var inputNotes = Note.ParseSequence(["D", "F", "A", "C"]);
-        var mappedNotes = HarmonyMapper.MapNegative(inputNotes, "C minor");
+        var (mappedNotes, context) = HarmonyMapper.MapNegativeWithContext(inputNotes, "C minor");
 
         Assert.Equal("G3", mappedNotes[0].ToString());
         Assert.Equal("Bb3", mappedNotes[1].ToString());
@@ -38,7 +38,7 @@ public class NegativeHarmonyTests
     public void Ab4_C5_Eb5_G5_InCMinorKey_ShouldResultIn_SortedOutput()
     {
         var inputNotes = Note.ParseSequence(["Ab4", "C5", "Eb5", "G5"]);
-        var mappedNotes = HarmonyMapper.MapNegative(inputNotes, "C minor");
+        var (mappedNotes, context) = HarmonyMapper.MapNegativeWithContext(inputNotes, "C minor");
 
         // The user's example resulted in B5, G5, E5, C5.
         // We want them to be sorted ascendingly: C5, E5, G5, B5.
@@ -69,21 +69,27 @@ public class NegativeHarmonyTests
     }
 
     [Fact]
-    public void DuplicateNotes_ShouldBeOmitted_WhenGroupingByPitchClass()
+    public void E_Minor_Bb_F_D_Should_Map_To_Structural_Mirror()
     {
-        var notes = new List<Note>
-        {
-            Note.Parse("C4"),
-            Note.Parse("E4"),
-            Note.Parse("G4"),
-            Note.Parse("C5")
-        };
-
-        var result = notes.GroupBy(n => n.PitchClass).Select(g => g.First()).ToList();
-
-        Assert.Equal(3, result.Count);
-        Assert.Equal("C4", result[0].ToString());
-        Assert.Equal("E4", result[1].ToString());
-        Assert.Equal("G4", result[2].ToString());
+        // E Minor: Tonic E(4), Dominant B(11). Axis 7.5.
+        // Bb4 (70) -> (159 - 70) = 89 (F6/E#6).
+        // F5 (77) -> (159 - 77) = 82 (Bb5/A#5).
+        // D6 (86) -> (159 - 86) = 73 (Db5/C#5).
+        
+        var inputNotes = Note.ParseSequence(["Bb4", "F5", "D6"]);
+        var (mappedNotes, context) = HarmonyMapper.MapNegativeWithContext(inputNotes, "E Minor");
+        
+        // Re-apply naming as Program.ProcessInput does
+        var finalNotes = mappedNotes.Select(n => Note.FromAbsolutePitch(n.AbsolutePitch, context)).ToList();
+        
+        // Final notes sorted by absolute pitch:
+        // PC 1 (Db5/C#5), PC 10 (Bb5/A#5), PC 5 (F6/E#6)
+        Assert.Equal(1, finalNotes[0].PitchClass);
+        Assert.Equal(10, finalNotes[1].PitchClass);
+        Assert.Equal(5, finalNotes[2].PitchClass);
+        
+        // Spelling should be in B Mixolydian (B, C#, D#, E, F#, G#, A).
+        // PC 1 is Diatonic (C#).
+        Assert.Equal("C#5", finalNotes[0].ToString());
     }
 }

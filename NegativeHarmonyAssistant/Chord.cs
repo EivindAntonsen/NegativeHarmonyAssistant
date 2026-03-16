@@ -48,16 +48,22 @@ public class Chord
 
     public static string Identify(List<Note> notes, KeyContext? context = null)
     {
-        if (notes.Count < 3) return "Unknown";
+        var (name, _) = IdentifyWithRoot(notes, context);
+        return name;
+    }
+
+    public static (string Name, Note? Root) IdentifyWithRoot(List<Note> notes, KeyContext? context = null)
+    {
+        if (notes.Count < 3) return ("Unknown", null);
         
         var pClasses = notes.Select(n => n.PitchClass).Distinct().OrderBy(p => p).ToList();
         
         for (var i = 0; i < pClasses.Count; i++)
         {
-            var root = pClasses[i];
-            var intervals = pClasses.Select(p => (p - root + 12) % 12).OrderBy(p => p).ToList();
+            var rootPC = pClasses[i];
+            var intervals = pClasses.Select(p => (p - rootPC + 12) % 12).OrderBy(p => p).ToList();
             
-            var rootNote = Note.FromAbsolutePitch(root + 60, context); 
+            var rootNote = Note.FromAbsolutePitch(rootPC + 60, context); 
             var rootName = rootNote.ToString().Replace(rootNote.Octave.ToString(), "");
             
             var name = intervals switch
@@ -74,9 +80,76 @@ public class Chord
                 _ => null
             };
 
-            if (name is not null) return name;
+            if (name is not null) return (name, rootNote);
         }
         
-        return "Unknown";
+        return ("Unknown", null);
     }
+
+    public static List<Note> ReSpell(List<Note> notes, KeyContext? context = null)
+    {
+        var (name, rootNote) = IdentifyWithRoot(notes, context);
+        if (name == "Unknown" || rootNote == null) return notes;
+
+        var rootLetter = rootNote.NoteName;
+        var rootPC = rootNote.PitchClass;
+        
+        var result = new List<Note>();
+        foreach (var note in notes)
+        {
+            var interval = (note.PitchClass - rootPC + 12) % 12;
+            
+            // Determine letter distance based on interval in a triad/7th
+            // 0 -> root (0)
+            // 1, 2 -> 2nd (1)
+            // 3, 4 -> 3rd (2)
+            // 5, 6 -> 4th (3)
+            // 7, 8 -> 5th (4)
+            // 9 -> 6th (5)
+            // 10, 11 -> 7th (6)
+            
+            var letterDist = interval switch {
+                0 => 0,
+                1 or 2 => 1,
+                3 or 4 => 2,
+                5 or 6 => 3,
+                7 or 8 => 4,
+                9 => 5,
+                10 or 11 => 6,
+                _ => -1
+            };
+
+            if (letterDist != -1)
+            {
+                var targetLetter = (NoteName)(((int)rootLetter + letterDist) % 7);
+                var basePC = GetBasePitchClass(targetLetter);
+                var diff = note.PitchClass - basePC;
+                while (diff > 6) diff -= 12;
+                while (diff < -6) diff += 12;
+
+                result.Add(new Note {
+                    NoteName = targetLetter,
+                    Accidental = diff == 0 ? null : (Accidental)diff,
+                    Octave = note.Octave
+                });
+            }
+            else
+            {
+                result.Add(note);
+            }
+        }
+        return result;
+    }
+
+    private static int GetBasePitchClass(NoteName name) => name switch
+    {
+        NoteName.C => 0,
+        NoteName.D => 2,
+        NoteName.E => 4,
+        NoteName.F => 5,
+        NoteName.G => 7,
+        NoteName.A => 9,
+        NoteName.B => 11,
+        _ => throw new ArgumentOutOfRangeException(nameof(name))
+    };
 }

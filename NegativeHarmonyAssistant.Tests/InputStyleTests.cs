@@ -52,6 +52,6 @@ public class InputStyleTests
         
         Assert.Equal(2, notes.Count);
         Assert.Equal(4, (int)notes[0].Octave);
-        Assert.Equal(5, (int)notes[1].Octave);
+        Assert.Equal(4, (int)notes[1].Octave); // Now stays in same octave if nearest
     }
 }

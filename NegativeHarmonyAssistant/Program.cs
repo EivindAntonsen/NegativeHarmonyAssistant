@@ -2,7 +2,7 @@
 
 namespace NegativeHarmonyAssistant;
 
-class Program
+public class Program
 {
     public static void Main(string[] args)
     {
@@ -99,30 +99,65 @@ class Program
         Console.WriteLine("Goodbye!");
     }
 
-    private static void ProcessInput(string notesInput, string keyInput, bool condense = false, bool omitDuplicates = false)
+    public static void ProcessInput(string notesInput, string keyInput, bool condense = false, bool omitDuplicates = false)
     {
         var groups = notesInput.Split('|', StringSplitOptions.TrimEntries | StringSplitOptions.RemoveEmptyEntries);
         if (groups.Length is 0) return;
 
-        var originalKeyContext = KeyContext.Parse(keyInput);
-
-        var firstGroupElements = groups[0].Split(',', StringSplitOptions.TrimEntries | StringSplitOptions.RemoveEmptyEntries);
-        var isChordMode = firstGroupElements is [var first] && IsChordHeuristic(first);
+        var initialKeyContext = KeyContext.Parse(keyInput);
+        var currentKeyContext = initialKeyContext;
 
         var chordGroups = new List<List<Note>>();
         var originalNames = new List<string>();
+        var keyContextsPerGroup = new List<KeyContext>();
+
+        var firstGroupElements = groups[0].Split(',', StringSplitOptions.TrimEntries | StringSplitOptions.RemoveEmptyEntries);
+        // Strip modulation for style detection
+        var firstElement = firstGroupElements.FirstOrDefault();
+        if (firstElement != null)
+        {
+            var modMatch = Regex.Match(firstElement, @"^\[(.*?)\]\s*(.*)$");
+            if (modMatch.Success) firstElement = modMatch.Groups[2].Value;
+        }
+        var isChordMode = firstElement != null && IsChordHeuristic(firstElement);
 
         foreach (var group in groups)
         {
             var elements = group.Split(',', StringSplitOptions.TrimEntries | StringSplitOptions.RemoveEmptyEntries);
-            
+            if (elements.Length == 0) continue;
+
+            // Check for modulation in the first element of the group
+            var firstInGroup = elements[0];
+            var modulationMatch = Regex.Match(firstInGroup, @"^\[(.*?)\]\s*(.*)$");
+            if (modulationMatch.Success)
+            {
+                var newKeyStr = modulationMatch.Groups[1].Value;
+                currentKeyContext = KeyContext.Parse(newKeyStr);
+                elements[0] = modulationMatch.Groups[2].Value;
+                // If there was only modulation and no note/chord in the first element, skip it
+                if (string.IsNullOrWhiteSpace(elements[0]))
+                {
+                    elements = elements.Skip(1).ToArray();
+                }
+            }
+
+            keyContextsPerGroup.Add(currentKeyContext);
+
             if (isChordMode)
             {
-                if (elements is not [var chordName] || !IsChordHeuristic(chordName))
+                if (elements.Length == 0)
+                {
+                    chordGroups.Add([]);
+                    originalNames.Add("");
+                    continue;
+                }
+
+                if (elements.Length > 1 || !IsChordHeuristic(elements[0]))
                     throw new ArgumentException($"Style inconsistency: Group '{group}' is not recognized as a single chord, but the first group was.");
                 
+                var chordName = elements[0];
                 var chord = Chord.Parse(chordName);
-                var diatonicallyCorrectNotes = chord.Notes.Select(n => Note.FromAbsolutePitch(n.AbsolutePitch, originalKeyContext)).ToList();
+                var diatonicallyCorrectNotes = chord.Notes.Select(n => Note.FromAbsolutePitch(n.AbsolutePitch, currentKeyContext)).ToList();
                 
                 if (omitDuplicates)
                 {
@@ -131,12 +166,12 @@ class Program
                 
                 chordGroups.Add(diatonicallyCorrectNotes);
                 
-                var identifiedName = Chord.Identify(diatonicallyCorrectNotes, originalKeyContext);
+                var identifiedName = Chord.Identify(diatonicallyCorrectNotes, currentKeyContext);
                 originalNames.Add(identifiedName == "Unknown" ? chordName : identifiedName);
             }
             else
             {
-                var inputNotes = ParseSequenceWithContext(elements, null);
+                var inputNotes = ParseSequenceWithContext(elements, chordGroups.LastOrDefault()?.LastOrDefault());
                 
                 if (omitDuplicates)
                 {
@@ -145,17 +180,42 @@ class Program
                 
                 chordGroups.Add(inputNotes);
                 
-                var identifiedName = Chord.Identify(inputNotes, originalKeyContext);
+                var identifiedName = Chord.Identify(inputNotes, currentKeyContext);
                 originalNames.Add(identifiedName == "Unknown" ? "" : identifiedName); 
             }
         }
 
-        var axisSum = HarmonyMapper.CalculateAxisSum(chordGroups.SelectMany(g => g), keyInput);
+        // Use the initial key for the base axis calculation, but we'll apply it per modulation context.
+        // Actually, if we have modulations, the axis might change.
+        // Let's calculate the axisSum for each group based on its keyContext.
 
         var processedResults = new List<(string NegName, List<Note> NegNotes)>();
-        foreach (var originalNotes in chordGroups)
+        for (var i = 0; i < chordGroups.Count; i++)
         {
-            var (mappedNotes, negContext) = HarmonyMapper.MapNegativeWithContext(originalNotes, keyInput, axisSum);
+            var originalNotes = chordGroups[i];
+            var context = keyContextsPerGroup[i];
+            
+            // We use the context-specific axis calculation.
+            var accStr = context.Tonic.Accidental switch
+            {
+                Accidental.DoubleSharp => "##",
+                Accidental.Sharp => "#",
+                Accidental.DoubleFlat => "bb",
+                Accidental.Flat => "b",
+                _ => ""
+            };
+            var keyStr = $"{context.Tonic.NoteName}{accStr} {context.Mode}";
+            var (mappedNotes, negContext) = HarmonyMapper.MapNegativeWithContext(originalNotes, keyStr);
+            
+            // Re-apply naming based on negative context to ensure correct spelling of chromatic notes
+            mappedNotes = mappedNotes.Select(n => Note.FromAbsolutePitch(n.AbsolutePitch, negContext)).ToList();
+            
+            // Further refine spelling based on identified chord structure (e.g., prefer E# over F in C# Major)
+            mappedNotes = Chord.ReSpell(mappedNotes, negContext);
+
+            // Simplify double sharps/flats for readability, unless user specifically wants them.
+            // The user said they should be used sparingly.
+            mappedNotes = mappedNotes.Select(n => n.Simplify()).ToList();
             
             if (condense)
             {
@@ -284,11 +344,40 @@ class Program
                     var tempNote = Note.Parse(input, 0); 
                     var targetPitchClass = tempNote.PitchClass;
                     var currentPitch = previous.AbsolutePitch;
-                    var nextPitch = currentPitch + 1;
+                    var nextPitch = currentPitch;
                     
-                    while (nextPitch % 12 != targetPitchClass)
+                    // Find the nearest note (either up, down, or same)
+                    // We want to minimize the interval to the next note.
+                    // If we only go UP, we might hit the octave limit quickly.
+                    
+                    var possiblePitches = new[] { 
+                        currentPitch + (targetPitchClass - currentPitch % 12 + 12) % 12, // UP or same
+                        currentPitch + (targetPitchClass - currentPitch % 12 - 12) % 12  // DOWN or same
+                    };
+                    
+                    // Tie-break: Prefer UP if distances are equal
+                    if (Math.Abs(possiblePitches[0] - currentPitch) < Math.Abs(possiblePitches[1] - currentPitch))
                     {
-                        nextPitch++;
+                        nextPitch = possiblePitches[0];
+                    }
+                    else if (Math.Abs(possiblePitches[1] - currentPitch) < Math.Abs(possiblePitches[0] - currentPitch))
+                    {
+                        nextPitch = possiblePitches[1];
+                    }
+                    else
+                    {
+                        // Equidistant. Prefer SAME octave if possible.
+                        // Actually, if they are equidistant from currentPitch, they can't both be in the same octave as currentPitch.
+                        // One must be above and one below.
+                        // The user's test expects "C", "C" to stay in octave 4.
+                        // If current is C4 (60). Next C can be C4 (60) or C3 (48) or C5 (72).
+                        // distance to 60 is 0. Distance to 48 is 12. Distance to 72 is 12.
+                        // So 60 is the unique minimum.
+                        
+                        // What if we are at F4 (65)? Next B could be B4 (71) or B3 (59).
+                        // Dist to 71 is 6. Dist to 59 is 6.
+                        // In this case, prefer UP to match previous behavior for non-C notes?
+                        nextPitch = possiblePitches[0]; 
                     }
                     
                     var note = Note.FromAbsolutePitch(nextPitch);

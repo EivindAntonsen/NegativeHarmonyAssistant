@@ -87,11 +87,21 @@ public class Note
                 {
                     var tempNote = Parse(input, 0);
                     var targetPitchClass = tempNote.PitchClass;
-                    var nextPitch = previous.AbsolutePitch + 1;
+                    var currentPitch = previous.AbsolutePitch;
                     
-                    while (nextPitch % 12 != targetPitchClass)
+                    var possiblePitches = new[] { 
+                        currentPitch + (targetPitchClass - currentPitch % 12 + 12) % 12, // UP or same
+                        currentPitch + (targetPitchClass - currentPitch % 12 - 12) % 12  // DOWN or same
+                    };
+                    
+                    int nextPitch;
+                    if (Math.Abs(possiblePitches[0] - currentPitch) <= Math.Abs(possiblePitches[1] - currentPitch))
                     {
-                        nextPitch++;
+                        nextPitch = possiblePitches[0];
+                    }
+                    else
+                    {
+                        nextPitch = possiblePitches[1];
                     }
                     
                     var note = FromAbsolutePitch(nextPitch);
@@ -123,6 +133,83 @@ public class Note
             {
                 NoteName = named.Name,
                 Accidental = named.Accidental,
+                Octave = octaveValue
+            };
+        }
+
+        if (context != null)
+        {
+            // Find the nearest diatonic note
+            var diatonicPcs = context.PitchClassToDiatonicName.Keys.ToList();
+            var nearest = diatonicPcs
+                .Select(dpc => new { dpc, dist = (pc - dpc + 12) % 12 })
+                .Select(x => new { x.dpc, dist = x.dist > 6 ? x.dist - 12 : x.dist })
+                .OrderBy(x => Math.Abs(x.dist))
+                .ThenByDescending(x =>
+                {
+                    // If equidistant (dist is 1 or -1), we must choose based on musical context.
+                    // For dominant chords in minor keys, we prefer the sharpened leading tone.
+                    // E.g., in G minor, target F# (11) is between F (10) and G (0).
+                    // dist to F is 1, dist to G is -1.
+                    // If we want F#, we prefer positive dist (sharpened).
+                    
+                    // In flat keys (PreferSharps = false), we usually prefer flats.
+                    // BUT for the leading tone specifically, we prefer sharp.
+                    
+                    // Leading tone to the root: target = root - 1.
+                    // Leading tone to the dominant: target = dominant - 1.
+                    
+                    // Heuristic: If it's the leading tone to any diatonic note, prefer sharpened.
+                    var targetNext = (pc + 1) % 12;
+                    if (context.PitchClassToDiatonicName.ContainsKey(targetNext))
+                    {
+                        // Special case: if targetNext is the tonic, it's definitely a leading tone
+                        if (targetNext == context.Tonic.PitchClass)
+                            return x.dist;
+                        
+                        // If it's the leading tone to the dominant (5th degree)
+                        var intervals = context.Mode.GetIntervals();
+                        var dominantPC = (context.Tonic.PitchClass + intervals[4]) % 12; // 5th degree
+                        if (targetNext == dominantPC)
+                            return x.dist;
+                    }
+                    
+                    // What about the minor 3rd in G Mixolydian (Bb vs A#)?
+                    // G Mixolydian: G(0), A(2), B(4), C(5), D(7), E(9), F(10).
+                    // Target Bb/A# (3). 3+1 = 4. 4 is B (in map).
+                    // So it currently returns x.dist -> A#.
+                    // BUT Bb is NOT a leading tone to B in the context of the minor 3rd.
+                    
+                    // If PreferSharps is false (e.g. key has flats), we should prefer flats (x.dist negative).
+                    // G Mixolydian has NO accidentals in scale. 
+                    // Current PreferSharps calculation in KeyContext:
+                    // PreferSharps = !PitchClassToDiatonicName.Values.Any(v => v.Accidental is Accidental.Flat or Accidental.DoubleFlat);
+                    // For G Mixolydian, this is TRUE.
+                    
+                    // BUT HarmonyMapper has logic to force PreferSharps to FALSE if original was FALSE and negative has NO accidentals.
+                    
+                    /* From HarmonyMapper.cs:
+                    var finalPreferSharps = negativeKeyContext.PreferSharps;
+                    if (!originalKey.PreferSharps && negativeKeyContext.PitchClassToDiatonicName.Values.All(v => v.Accidental == null))
+                    {
+                        finalPreferSharps = false;
+                    }
+                    */
+                    
+                    // HOWEVER, Note.FromAbsolutePitch uses context.PreferSharps which is the one from KeyContext.
+                    // The one from HarmonyMapper is passed as a parameter `preferSharps`.
+                    
+                    var actualPreferSharps = preferSharps ?? context.PreferSharps;
+                    return actualPreferSharps ? x.dist : -x.dist;
+                })
+                .First();
+
+            var baseNote = context.PitchClassToDiatonicName[nearest.dpc];
+            var finalAccidental = (int)(baseNote.Accidental ?? 0) + nearest.dist;
+            return new Note
+            {
+                NoteName = baseNote.Name,
+                Accidental = finalAccidental == 0 ? null : (Accidental)finalAccidental,
                 Octave = octaveValue
             };
         }
@@ -164,6 +251,19 @@ public class Note
             _ => ""
         };
         return $"{NoteName}{accStr}{Octave}";
+    }
+
+    public Note Simplify()
+    {
+        if (Accidental is not (NegativeHarmonyAssistant.Accidental.DoubleSharp or NegativeHarmonyAssistant.Accidental.DoubleFlat))
+            return this;
+
+        // C## -> D, D## -> E, E## -> F#, F## -> G, G## -> A, A## -> B, B## -> C#
+        // Cbb -> Bb, Dbb -> C, Ebb -> D, Fbb -> Eb, Gbb -> F, Abb -> G, Bbb -> A
+        
+        var pc = PitchClass;
+        // We use a simple non-contextual mapping for simplification
+        return FromAbsolutePitch(AbsolutePitch);
     }
 
     public static List<Note> Condense(List<Note> notes, KeyContext? context = null)
