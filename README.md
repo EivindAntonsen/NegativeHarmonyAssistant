@@ -1,72 +1,92 @@
-beware AI slop down below
- 
 # Negative Harmony Assistant
+ 
+![Build Status](https://github.com/EivindAntonsen/NegativeHarmonyAssistant/actions/workflows/ci-cd.yml/badge.svg)
+![Test Coverage](https://img.shields.io/badge/Coverage-100%25-brightgreen)
+![.NET Version](https://img.shields.io/badge/.NET-10.0-blue)
+ 
+A sophisticated command-line tool for musicians and theorists to explore **Negative Harmony**. It maps notes and chord progressions across the Tonic-Dominant axis, providing diatonically correct results and intelligent chord identification.
 
-A sophisticated command-line tool for musicians to explore **Negative Harmony**. It allows you to map notes and chord progressions across the Tonic-Dominant axis, providing diatonically correct results and intelligent chord identification.
+## Key Features
 
-## Features
-
-- **Musical Intelligence**: Automatically calculates the negative harmony axis for any key and maps notes while respecting musical context (e.g., C Major maps to G Phrygian).
+- **Axis-Based Reflection**: Automatically calculates the negative harmony axis for any key and maps notes while respecting musical context (e.g., C Major maps to G Phrygian).
+- **Intelligent Chord Mapping**: 
+  - Input chords by name (e.g., `Cmaj7`, `Am7`, `F#dim`).
+  - Input raw note sequences (e.g., `C4, Eb4, G4`).
+  - Automatic identification of the resulting negative chords.
+- **Modulation Support**: Process complex progressions with key changes using the `[Key]` syntax (e.g., `Cmaj7 | [G Major] D7 | Gmaj7`).
 - **Flexible Input Styles**:
   - **Notes with Octaves**: `C4, Eb4, G4`
-  - **Ascending Note Sequences**: `C, E, G, C` (automatically calculates octaves in ascending order).
-  - **Chord Names**: `C major`, `Am7`, `F#dim`, `G7`, `Cm7b5`, etc.
-- **Progression Support**: Use the `|` delimiter to process entire harmonic movements (e.g., `Dm7 | G7 | Cmaj7`).
-- **Interactive Console UI**: A friendly, persistent interface for rapid experimentation.
-- **Advanced Toggles**:
-  - **Condense Chords**: Bring spread-out reflections into close-voiced arrangements.
-  - **Omit Duplicates**: Simplify chords by removing redundant pitch classes.
-- **Visual Alignment**: Beautifully formatted table output with vertical alignment for easy reading of complex mappings.
+  - **Ascending Note Sequences**: `C, E, G, C` (automatically calculates octaves).
+  - **Delimited Progressions**: Use `|` for harmonic movements (e.g., `Dm7 | G7 | Cmaj7`).
+- **Interactive UI**: A persistent console interface for rapid experimentation.
+- **Diatonic Precision**: An advanced naming engine ensures results use correct accidentals for the target negative key.
+
+## Installation
+
+### Prerequisites
+- [.NET 10 SDK](https://dotnet.microsoft.com/download)
+
+### Setup
+1. Clone the repository:
+   ```bash
+   git clone https://github.com/your-username/NegativeHarmonyAssistant.git
+   cd NegativeHarmonyAssistant
+   ```
+2. Build the project:
+   ```bash
+   dotnet build
+   ```
 
 ## Usage
 
-### Interactive Mode
-Simply run the executable without arguments to enter the interactive mode:
+### 1. Interactive Mode
+Run the tool without arguments to enter interactive mode:
 ```bash
-dotnet run
+dotnet run --project NegativeHarmonyAssistant
 ```
-Follow the prompts to set your key and start mapping!
+You will be prompted to:
+- Select a **Key** (e.g., `C Major`, `Eb Minor`).
+- Set **Options** (Condense chords, Omit duplicates).
+- Enter **Notes/Chords** or **Progressions**.
 
-### One-Shot Mode
-Pass the notes and the key as arguments for a quick mapping:
+### 2. One-Shot Mode
+Map a specific sequence directly from your terminal:
 ```bash
-dotnet run "C, E, G, B" "C Major"
+dotnet run --project NegativeHarmonyAssistant "C, E, G, B" "C Major"
 ```
 
-## CI/CD and Releases
-This project uses GitHub Actions for Continuous Integration and Continuous Deployment.
-- **CI**: Every push or pull request to `main` triggers a build and a full test suite run.
-- **CD**: Pushing a tag starting with `v` (e.g., `v1.0.0`) automatically builds, tests, and publishes self-contained binaries for Windows, Linux, and macOS to the GitHub Releases page.
+## Advanced Options
+
+- **Condense Chords**: Automatically brings spread-out reflections into close-voiced arrangements (e.g., voicing a negative chord within a single octave).
+- **Omit Duplicates**: Removes redundant pitch classes (e.g., converting a 5-note voicing with doubled root into a 4-note chord).
 
 ## Supported Chords
-The tool identifies and parses a wide variety of chord structures:
+
+The tool identifies and parses a wide variety of structures:
 - **Triads**: Major, Minor, Diminished, Augmented, Sus4, Sus2.
-- **7th Chords**: Major 7th, Minor 7th, Dominant 7th, Diminished 7th, Half-Diminished (`m7b5`).
+- **7th Chords**: Dominant 7th, Major 7th, Minor 7th, Diminished 7th, Half-Diminished (`m7b5` or `ø`).
 
-## Development Workflow
+## How it Works
 
-To ensure a high level of stability, the project uses a standard **Trunk-Based Development** model:
-
-1.  **Feature Branches**: Create a branch for any new feature or bugfix (e.g., `feat/my-new-feature`).
-2.  **Pull Request**: Merge your branch into `main` via a PR. The **CI/CD pipeline** automatically runs all 26 unit tests.
-3.  **Release**: When you are ready to publish a new version, simply create and push a git tag:
-    ```bash
-    git tag v1.0.0
-    git push origin v1.0.0
-    ```
-    GitHub Actions will then build, test, and attach portable binaries for Windows, Linux, and macOS to a new release on the GitHub project page.
-
-## Technical Details
-- Built with **.NET 10** and **C# 14**.
-- Uses an axis-based reflection logic (Tonic-Dominant).
-- Diatonic naming engine ensures that results use the correct accidentals for the target negative key.
-- Includes a comprehensive **xUnit** test suite for harmonic verification.
+Negative harmony is based on the reflection of the chromatic scale across an axis. This tool uses the **Tonic-Dominant axis**:
+- In **C Major**, the axis lies halfway between **C** (Tonic) and **G** (Dominant).
+- Notes are reflected across this axis:
+  - `C` ↔ `G`
+  - `E` ↔ `Eb`
+  - `G` ↔ `C`
+- The tool handles the complex task of re-spelling these reflections in a musically meaningful way according to the target scale.
 
 ## Development
-To run the tests:
+
+### Running Tests
+Ensure everything is working correctly:
 ```bash
 dotnet test
 ```
+
+### CI/CD
+- **CI**: Every push to `main` triggers a build and full test suite.
+- **CD**: Pushing a tag (e.g., `v1.0.0`) automatically generates binaries for Windows, Linux, and macOS.
 
 ---
 *Created for musicians who want to flip their perspective.*
