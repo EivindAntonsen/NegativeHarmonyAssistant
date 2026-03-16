@@ -64,7 +64,7 @@ public class Chord
             var intervals = pClasses.Select(p => (p - rootPC + 12) % 12).OrderBy(p => p).ToList();
             
             var rootNote = Note.FromAbsolutePitch(rootPC + 60, context); 
-            var rootName = rootNote.ToString().Replace(rootNote.Octave.ToString(), "");
+            var rootName = rootNote.ToString(false);
             
             var name = intervals switch
             {

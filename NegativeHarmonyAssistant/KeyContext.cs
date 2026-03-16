@@ -55,6 +55,18 @@ public class KeyContext
         return new KeyContext(tonic, mode);
     }
 
+    private static int GetNoteNameBasePC(NoteName name) => name switch
+    {
+        NoteName.C => 0,
+        NoteName.D => 2,
+        NoteName.E => 4,
+        NoteName.F => 5,
+        NoteName.G => 7,
+        NoteName.A => 9,
+        NoteName.B => 11,
+        _ => 0
+    };
+
     private static Dictionary<int, (NoteName, Accidental?)> GenerateDiatonicMap(Note tonic, Mode mode)
     {
         var map = new Dictionary<int, (NoteName, Accidental?)>();

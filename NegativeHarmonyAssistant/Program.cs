@@ -222,8 +222,7 @@ public class Program
             // Further refine spelling based on identified chord structure (e.g., prefer E# over F in C# Major)
             mappedNotes = Chord.ReSpell(mappedNotes, negContext);
 
-            // Simplify double sharps/flats for readability, unless user specifically wants them.
-            // The user said they should be used sparingly.
+            // Simplify double sharps/flats for readability
             mappedNotes = mappedNotes.Select(n => n.Simplify()).ToList();
 
             // Shift octave if necessary to stay within reasonable range (3-5) while preserving intervals

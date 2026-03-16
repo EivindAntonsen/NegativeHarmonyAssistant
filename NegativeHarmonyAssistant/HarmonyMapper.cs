@@ -31,10 +31,6 @@ public class HarmonyMapper
         var negativeKeyContext = new KeyContext(dominantNote, negativeMode);
 
         var finalPreferSharps = negativeKeyContext.PreferSharps;
-        if (!originalKey.PreferSharps && negativeKeyContext.PitchClassToDiatonicName.Values.All(v => v.Accidental == null))
-        {
-            finalPreferSharps = false;
-        }
 
         var mapped = noteList.Select(note => Note.FromAbsolutePitch(axisSum - note.AbsolutePitch, negativeKeyContext, finalPreferSharps))
             .OrderBy(n => n.AbsolutePitch)

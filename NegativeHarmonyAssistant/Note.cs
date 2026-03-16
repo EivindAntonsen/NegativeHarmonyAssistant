@@ -269,11 +269,8 @@ public class Note
         if (Accidental is not (NegativeHarmonyAssistant.Accidental.DoubleSharp or NegativeHarmonyAssistant.Accidental.DoubleFlat))
             return this;
 
-        // C## -> D, D## -> E, E## -> F#, F## -> G, G## -> A, A## -> B, B## -> C#
-        // Cbb -> Bb, Dbb -> C, Ebb -> D, Fbb -> Eb, Gbb -> F, Abb -> G, Bbb -> A
-        
         var pc = PitchClass;
-        // We use a simple non-contextual mapping for simplification
+        // Simplify double sharps/flats to nearest single accidental or natural
         return FromAbsolutePitch(AbsolutePitch);
     }
 
