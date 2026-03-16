@@ -65,7 +65,7 @@ public class Note
 
         foreach (var input in inputs)
         {
-            var match = Regex.Match(input.Trim(), @"^([A-G])(##|#|bb|b)?(\d)?$", RegexOptions.IgnoreCase);
+            var match = Regex.Match(input.Trim(), @"^([A-G])(##|#|bb|b)?(\d+)?$", RegexOptions.IgnoreCase);
             if (!match.Success)
                 throw new ArgumentException($"Invalid note format in sequence: {input}");
 
@@ -247,6 +247,11 @@ public class Note
 
     public override string ToString()
     {
+        return ToString(true);
+    }
+
+    public string ToString(bool includeOctave)
+    {
         var accStr = Accidental switch
         {
             NegativeHarmonyAssistant.Accidental.DoubleSharp => "##",
@@ -255,7 +260,8 @@ public class Note
             NegativeHarmonyAssistant.Accidental.Flat => "b",
             _ => ""
         };
-        return $"{NoteName}{accStr}{Octave}";
+        var octStr = includeOctave ? Octave.ToString() : "";
+        return $"{NoteName}{accStr}{octStr}";
     }
 
     public Note Simplify()

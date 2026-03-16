@@ -29,16 +29,6 @@ public class Program
 
     private static void RunInteractive()
     {
-        Console.Clear();
-        Console.WriteLine("========================================");
-        Console.WriteLine("    Negative Harmony Assistant v1.0");
-        Console.WriteLine("========================================");
-        Console.WriteLine("Welcome! This tool maps notes and chords");
-        Console.WriteLine("to their negative harmony counterparts.");
-        Console.WriteLine("Type 'k' or 'key' to change the settings.");
-        Console.WriteLine("Type '?' at any prompt to reset back to the key selection.");
-        Console.WriteLine("Type 'exit' or 'q' at any prompt to quit.\n");
-
         while (true)
         {
             Console.Write("Enter Key (e.g., 'C Major', 'Eb Minor'): ");
@@ -101,6 +91,7 @@ public class Program
 
     public static void ProcessInput(string notesInput, string keyInput, bool condense = false, bool omitDuplicates = false)
     {
+        var hasExplicitOctaves = Regex.IsMatch(notesInput, @"\d");
         var groups = notesInput.Split('|', StringSplitOptions.TrimEntries | StringSplitOptions.RemoveEmptyEntries);
         if (groups.Length is 0) return;
 
@@ -110,6 +101,7 @@ public class Program
         var chordGroups = new List<List<Note>>();
         var originalNames = new List<string>();
         var keyContextsPerGroup = new List<KeyContext>();
+        var modulationsPerGroup = new List<string?>();
 
         var firstGroupElements = groups[0].Split(',', StringSplitOptions.TrimEntries | StringSplitOptions.RemoveEmptyEntries);
         // Strip modulation for style detection
@@ -132,6 +124,7 @@ public class Program
             if (modulationMatch.Success)
             {
                 var newKeyStr = modulationMatch.Groups[1].Value;
+                modulationsPerGroup.Add($"[{newKeyStr}]");
                 currentKeyContext = KeyContext.Parse(newKeyStr);
                 elements[0] = modulationMatch.Groups[2].Value;
                 // If there was only modulation and no note/chord in the first element, skip it
@@ -139,6 +132,10 @@ public class Program
                 {
                     elements = elements.Skip(1).ToArray();
                 }
+            }
+            else
+            {
+                modulationsPerGroup.Add(null);
             }
 
             keyContextsPerGroup.Add(currentKeyContext);
@@ -173,6 +170,18 @@ public class Program
             {
                 var inputNotes = ParseSequenceWithContext(elements, chordGroups.LastOrDefault()?.LastOrDefault());
                 
+                // Re-spell original notes according to the identified chord structure,
+                // OR according to the current key context if no chord is identified.
+                var (originalChordName, originalRoot) = Chord.IdentifyWithRoot(inputNotes, currentKeyContext);
+                if (originalChordName != "Unknown" && originalRoot != null)
+                {
+                    inputNotes = Chord.ReSpell(inputNotes, currentKeyContext);
+                }
+                else
+                {
+                    inputNotes = inputNotes.Select(n => Note.FromAbsolutePitch(n.AbsolutePitch, currentKeyContext)).ToList();
+                }
+
                 if (omitDuplicates)
                 {
                     inputNotes = inputNotes.GroupBy(n => n.PitchClass).Select(g => g.First()).ToList();
@@ -216,6 +225,19 @@ public class Program
             // Simplify double sharps/flats for readability, unless user specifically wants them.
             // The user said they should be used sparingly.
             mappedNotes = mappedNotes.Select(n => n.Simplify()).ToList();
+
+            // Shift octave if necessary to stay within reasonable range (3-5) while preserving intervals
+            var mappedAvgOctave = mappedNotes.Average(n => n.Octave);
+            if (mappedAvgOctave > 6)
+            {
+                var shift = (int)Math.Floor(mappedAvgOctave - 5);
+                mappedNotes = mappedNotes.Select(n => Note.FromAbsolutePitch(n.AbsolutePitch - shift * 12, negContext)).ToList();
+            }
+            else if (mappedAvgOctave < 2)
+            {
+                var shift = (int)Math.Floor(3 - mappedAvgOctave);
+                mappedNotes = mappedNotes.Select(n => Note.FromAbsolutePitch(n.AbsolutePitch + shift * 12, negContext)).ToList();
+            }
             
             if (condense)
             {
@@ -232,13 +254,24 @@ public class Program
             processedResults.Add((negativeName, mappedNotes));
         }
 
-        var inputStr = string.Join(" | ", originalNames.Select((n, i) => string.IsNullOrEmpty(n) ? string.Join(", ", chordGroups[i].Select(note => note.ToString())) : n));
+        var inputParts = new List<string>();
+        for (int i = 0; i < chordGroups.Count; i++)
+        {
+            var part = "";
+            if (modulationsPerGroup[i] != null) part += modulationsPerGroup[i] + " ";
+            var name = originalNames[i];
+            part += (string.IsNullOrEmpty(name) || name == "Unknown" || (isChordMode && name == chordGroups[i].FirstOrDefault()?.ToString(hasExplicitOctaves))) 
+                ? string.Join(", ", chordGroups[i].Select(note => note.ToString(hasExplicitOctaves))) 
+                : name;
+            inputParts.Add(part);
+        }
+        var inputStr = string.Join(" | ", inputParts);
         Console.WriteLine($"Original: {inputStr}");
-        Console.WriteLine($"Key: {keyInput}");
+        Console.WriteLine($"Initial Key: {keyInput}");
         Console.WriteLine("\nNegative Harmony Mapping:");
 
-        var maxOriginalNameWidth = originalNames.Max(n => n.Length);
-        var maxNegativeNameWidth = processedResults.Max(r => r.NegName.Length);
+        var maxOriginalNameWidth = originalNames.Max(n => (string.IsNullOrEmpty(n) || n == "Unknown" ? "" : $"({n}) ").Length);
+        var maxNegativeNameWidth = processedResults.Max(r => (string.IsNullOrEmpty(r.NegName) || r.NegName == "Unknown" ? "" : $"({r.NegName}) ").Length);
 
         var origNameColWidth = maxOriginalNameWidth > 0 ? maxOriginalNameWidth + 3 : 0;
         var negNameColWidth = maxNegativeNameWidth > 0 ? maxNegativeNameWidth + 3 : 0;
@@ -251,10 +284,10 @@ public class Program
         for (var j = 0; j < maxNotesInGroup; j++)
         {
             originalNoteWidths[j] = chordGroups.Any(g => g.Count > j) 
-                ? chordGroups.Where(g => g.Count > j).Max(g => (g[j].ToString() + (j < g.Count - 1 ? ", " : "")).Length)
+                ? chordGroups.Where(g => g.Count > j).Max(g => (g[j].ToString(hasExplicitOctaves) + (j < g.Count - 1 ? ", " : "")).Length)
                 : 0;
             negativeNoteWidths[j] = processedResults.Any(r => r.NegNotes.Count > j)
-                ? processedResults.Where(r => r.NegNotes.Count > j).Max(r => (r.NegNotes[j].ToString() + (j < r.NegNotes.Count - 1 ? ", " : "")).Length)
+                ? processedResults.Where(r => r.NegNotes.Count > j).Max(r => (r.NegNotes[j].ToString(hasExplicitOctaves) + (j < r.NegNotes.Count - 1 ? ", " : "")).Length)
                 : 0;
         }
 
@@ -267,26 +300,26 @@ public class Program
             var origNotes = chordGroups[i];
             var (negName, negNotes) = processedResults[i];
 
-            var origNamePart = string.IsNullOrEmpty(origName) 
+            var origNamePart = string.IsNullOrEmpty(origName) || origName == "Unknown"
                 ? new string(' ', origNameColWidth) 
                 : $"({origName}) ".PadRight(origNameColWidth);
             
             var origNotesPart = "";
             for (var j = 0; j < origNotes.Count; j++)
             {
-                var noteStr = origNotes[j].ToString() + (j < origNotes.Count - 1 ? ", " : "");
+                var noteStr = origNotes[j].ToString(hasExplicitOctaves) + (j < origNotes.Count - 1 ? ", " : "");
                 origNotesPart += noteStr.PadRight(originalNoteWidths[j]);
             }
             origNotesPart += new string(' ', originalNoteWidths.Sum() - originalNoteWidths.Take(origNotes.Count).Sum());
 
-            var negNamePart = string.IsNullOrEmpty(negName) 
+            var negNamePart = string.IsNullOrEmpty(negName) || negName == "Unknown"
                 ? new string(' ', negNameColWidth) 
                 : $"({negName}) ".PadRight(negNameColWidth);
 
             var negNotesPart = "";
             for (var j = 0; j < negNotes.Count; j++)
             {
-                var noteStr = negNotes[j].ToString() + (j < negNotes.Count - 1 ? ", " : "");
+                var noteStr = negNotes[j].ToString(hasExplicitOctaves) + (j < negNotes.Count - 1 ? ", " : "");
                 negNotesPart += noteStr.PadRight(negativeNoteWidths[j]);
             }
 
@@ -300,13 +333,20 @@ public class Program
         
         Console.WriteLine(headerOrigName + headerOrigNotes + arrow + headerNegName + "Notes");
         Console.WriteLine(new string('-', Math.Max(maxRowLength, 40)));
-        foreach (var row in rows) Console.WriteLine(row);
+        for (var i = 0; i < rows.Count; i++)
+        {
+            if (modulationsPerGroup[i] != null)
+            {
+                Console.WriteLine($"\n--- Modulation to {modulationsPerGroup[i]} ---");
+            }
+            Console.WriteLine(rows[i]);
+        }
 
         var finalProgression = new List<string>();
         for (var i = 0; i < chordGroups.Count; i++)
         {
             var (negName, negNotes) = processedResults[i];
-            var negativeNotesStr = string.Join(", ", negNotes.Select(n => n.ToString()));
+            var negativeNotesStr = string.Join(", ", negNotes.Select(n => n.ToString(hasExplicitOctaves)));
             finalProgression.Add(string.IsNullOrEmpty(negName) ? $"[{negativeNotesStr}]" : negName);
         }
         Console.WriteLine($"\nResulting Progression: {string.Join(" - ", finalProgression)}");
@@ -319,7 +359,7 @@ public class Program
 
         foreach (var input in inputs)
         {
-            var match = Regex.Match(input.Trim(), @"^([A-G])(##|#|bb|b)?(\d)?$", RegexOptions.IgnoreCase);
+            var match = Regex.Match(input.Trim(), @"^([A-G])(##|#|bb|b)?(\d+)?$", RegexOptions.IgnoreCase);
             if (!match.Success)
                 throw new ArgumentException($"Invalid note format in sequence: {input}");
 
@@ -414,7 +454,7 @@ public class Program
         _ => throw new ArgumentOutOfRangeException(nameof(name))
     };
 
-    private static bool IsChordHeuristic(string input)
+    public static bool IsChordHeuristic(string input)
     {
         var trimmed = input.Trim();
         if (trimmed.Length == 0) return false;

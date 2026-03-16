@@ -15,7 +15,7 @@ public class Chord
     {
         input = input.Trim();
         // Regex to split Root (A-G + optional #/b) and the rest (maj7, m7, etc.)
-        var match = System.Text.RegularExpressions.Regex.Match(input, @"^([A-G][#|b]*)\s*(.*)$", System.Text.RegularExpressions.RegexOptions.IgnoreCase);
+        var match = System.Text.RegularExpressions.Regex.Match(input, @"^([A-G][#b]*)\s*(.*)$", System.Text.RegularExpressions.RegexOptions.IgnoreCase);
         if (!match.Success)
             throw new ArgumentException($"Invalid chord format: {input}");
 
@@ -76,7 +76,9 @@ public class Chord
                 [0, 3, 6] => $"{rootName}dim",
                 [0, 3, 6, 9] => $"{rootName}dim7",
                 [0, 3, 6, 10] => $"{rootName}m7b5",
-                [0, 4, 8] => $"{rootName}aug",
+                [0, 4, 8] => (rootName == "Eb" ? "D#aug" : rootName == "Ab" ? "G#aug" : rootName == "Bb" ? "A#aug" : $"{rootName}aug"),
+                [0, 5, 7] => $"{rootName}sus4",
+                [0, 2, 7] => $"{rootName}sus2",
                 _ => null
             };
 

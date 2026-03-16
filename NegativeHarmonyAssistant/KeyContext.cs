@@ -26,7 +26,7 @@ public class KeyContext
         // But only if there is NO second part with a mode.
         if (modeStrFromParts == null)
         {
-            var match = System.Text.RegularExpressions.Regex.Match(tonicPart, @"^([A-G][#|b|#|#|b|b]*)([m|min|minor|maj|major|ionian|aeolian|dorian|phrygian|lydian|mixolydian|locrian].*)$", System.Text.RegularExpressions.RegexOptions.IgnoreCase);
+            var match = System.Text.RegularExpressions.Regex.Match(tonicPart, @"^([A-G][#b]*)([m|min|minor|maj|major|ionian|aeolian|dorian|phrygian|lydian|mixolydian|locrian].*)$", System.Text.RegularExpressions.RegexOptions.IgnoreCase);
             if (match.Success)
             {
                 tonicPart = match.Groups[1].Value;
