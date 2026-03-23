@@ -40,6 +40,8 @@ public class Chord
         "dim" => [0, 3, 6],
         "dim7" => [0, 3, 6, 9],
         "m7b5" or "ø" => [0, 3, 6, 10],
+        "maj7#5" => [0, 4, 8, 11],
+        "m(maj7)" or "minmaj7" => [0, 3, 7, 11],
         "aug" or "+" => [0, 4, 8],
         "sus4" => [0, 5, 7],
         "sus2" => [0, 2, 7],
@@ -76,6 +78,8 @@ public class Chord
                 [0, 3, 6] => $"{rootName}dim",
                 [0, 3, 6, 9] => $"{rootName}dim7",
                 [0, 3, 6, 10] => $"{rootName}m7b5",
+                [0, 4, 8, 11] => $"{rootName}maj7#5",
+                [0, 3, 7, 11] => $"{rootName}m(maj7)",
                 [0, 4, 8] => (rootName == "Eb" ? "D#aug" : rootName == "Ab" ? "G#aug" : rootName == "Bb" ? "A#aug" : $"{rootName}aug"),
                 [0, 5, 7] => $"{rootName}sus4",
                 [0, 2, 7] => $"{rootName}sus2",
@@ -132,7 +136,11 @@ public class Chord
                 result.Add(new Note {
                     NoteName = targetLetter,
                     Accidental = diff == 0 ? null : (Accidental)diff,
-                    Octave = note.Octave
+                    Octave = note.Octave,
+                    OriginalTime = note.OriginalTime,
+                    OriginalDuration = note.OriginalDuration,
+                    OriginalVelocity = note.OriginalVelocity,
+                    OriginalChannel = note.OriginalChannel
                 });
             }
             else

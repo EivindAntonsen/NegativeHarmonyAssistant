@@ -8,7 +8,9 @@ public enum Mode
     Lydian,
     Mixolydian,
     Aeolian, Minor = Aeolian,
-    Locrian
+    Locrian,
+    HarmonicMinor,
+    HarmonicMajor
 }
 
 public static class ModeExtensions
@@ -22,6 +24,8 @@ public static class ModeExtensions
         Mode.Mixolydian => [0, 2, 4, 5, 7, 9, 10],
         Mode.Aeolian => [0, 2, 3, 5, 7, 8, 10],
         Mode.Locrian => [0, 1, 3, 5, 6, 8, 10],
+        Mode.HarmonicMinor => [0, 2, 3, 5, 7, 8, 11],
+        Mode.HarmonicMajor => [0, 2, 4, 5, 7, 8, 11],
         _ => throw new ArgumentOutOfRangeException(nameof(mode))
     };
 
@@ -34,6 +38,8 @@ public static class ModeExtensions
         Mode.Mixolydian => Mode.Aeolian,
         Mode.Aeolian => Mode.Mixolydian,
         Mode.Locrian => Mode.Lydian,
+        Mode.HarmonicMinor => Mode.HarmonicMajor,
+        Mode.HarmonicMajor => Mode.HarmonicMinor,
         _ => throw new ArgumentOutOfRangeException(nameof(mode))
     };
 }

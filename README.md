@@ -19,6 +19,9 @@ A sophisticated command-line tool for musicians and theorists to explore **Negat
   - **Ascending Note Sequences**: `C, E, G, C` (automatically calculates octaves).
   - **Delimited Progressions**: Use `|` for harmonic movements (e.g., `Dm7 | G7 | Cmaj7`).
 - **Interactive UI**: A persistent console interface for rapid experimentation.
+- **MIDI Support**: 
+  - **Import**: Analyze MIDI files to extract chord progressions.
+  - **Export**: Automatically generate a new MIDI file containing the negative harmony version of the input.
 - **Diatonic Precision**: An advanced naming engine ensures results use correct accidentals for the target negative key.
 
 ## Installation
@@ -54,6 +57,17 @@ Map a specific sequence directly from your terminal:
 ```bash
 dotnet run --project NegativeHarmonyAssistant "C, E, G, B" "C Major"
 ```
+
+### 3. MIDI Processing
+Process a MIDI file to extract its chord progression and export the negative harmony version:
+```bash
+dotnet run --project NegativeHarmonyAssistant "path/to/your.mid" "C Major"
+```
+The tool will:
+1. Extract notes from the MIDI file (excluding drum tracks).
+2. Group notes by start time into a chord progression.
+3. Calculate and display the negative harmony progression in the console.
+4. Export a new MIDI file (e.g., `your_negative.mid`) with the mapped notes.
 
 ## Advanced Options
 

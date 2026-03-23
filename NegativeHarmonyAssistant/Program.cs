@@ -6,13 +6,118 @@ public class Program
 {
     public static void Main(string[] args)
     {
-        if (args is [var notesInput, var keyInput, ..])
+        if (args.Length >= 1 && (args[0].EndsWith(".mid", StringComparison.OrdinalIgnoreCase) || args[0].EndsWith(".midi", StringComparison.OrdinalIgnoreCase)))
         {
-            RunOnce(notesInput, keyInput);
+            var midiPath = args[0];
+            string? keyFromArgs = args.Length >= 2 ? args[1] : null;
+
+            if (string.IsNullOrEmpty(keyFromArgs))
+            {
+                Console.Write("Enter Key (e.g., 'C Major', 'Eb Minor'): ");
+                keyFromArgs = Console.ReadLine()?.Trim();
+            }
+
+            if (string.IsNullOrEmpty(keyFromArgs))
+            {
+                Console.WriteLine("Key is required for MIDI processing.");
+                return;
+            }
+
+            ProcessMidiFile(midiPath, keyFromArgs);
+            return;
+        }
+
+        if (args.Length >= 2)
+        {
+            RunOnce(args[0], args[1]);
             return;
         }
 
         RunInteractive();
+    }
+
+    private static void ProcessMidiFile(string filePath, string keyInput, bool condense = true, bool omitDuplicates = true)
+    {
+        Console.WriteLine($"Processing MIDI file: {filePath}");
+        var result = MidiProcessor.AnalyzeFile(filePath);
+        
+        if (!result.Success)
+        {
+            Console.ForegroundColor = ConsoleColor.Red;
+            Console.WriteLine(result.Message);
+            Console.ResetColor();
+
+            if (result.ChordProgression != null && result.ChordProgression.Any())
+            {
+                 Console.WriteLine("\nNotes found (but not chords):");
+                 foreach (var group in result.ChordProgression)
+                 {
+                     Console.WriteLine(string.Join(", ", group));
+                 }
+            }
+            return;
+        }
+
+        Console.WriteLine(result.Message);
+        Console.WriteLine("----------------------------------------");
+
+        var progression = result.ChordProgression!;
+        
+        var negativeProgression = new List<List<Note>>();
+        foreach (var chord in progression)
+        {
+            // Process each chord group individually to preserve metadata accurately
+            var chordInput = string.Join(", ", chord.Select(n => n.ToString(true)));
+            var processedGroups = ProcessInput(chordInput, keyInput, condense, omitDuplicates);
+            if (processedGroups.Any())
+            {
+                var mappedChord = processedGroups[0];
+                
+                // If the number of notes is different (e.g. because of omitDuplicates or internal parsing issues), 
+                // we should try to match metadata as best as we can.
+                // But ProcessInput now preserves metadata internally, so if the count matches, it's already there.
+                // If the count DOES NOT match (e.g. OmitDuplicates was on), we might need to be careful.
+                
+                // Safety check: If metadata is somehow missing but we have original notes, try to fill it.
+                // This shouldn't be strictly necessary now but helps if some path still misses it.
+                if (mappedChord.Count == chord.Count)
+                {
+                    for (int i = 0; i < mappedChord.Count; i++)
+                    {
+                        if (!mappedChord[i].OriginalTime.HasValue)
+                        {
+                            var mappedNote = mappedChord[i];
+                            var originalNote = chord[i];
+                            mappedChord[i] = new Note
+                            {
+                                NoteName = mappedNote.NoteName,
+                                Accidental = mappedNote.Accidental,
+                                Octave = mappedNote.Octave,
+                                OriginalTime = originalNote.OriginalTime,
+                                OriginalDuration = originalNote.OriginalDuration,
+                                OriginalVelocity = originalNote.OriginalVelocity,
+                                OriginalChannel = originalNote.OriginalChannel
+                            };
+                        }
+                    }
+                }
+
+                negativeProgression.Add(mappedChord);
+            }
+        }
+
+        var outputFileName = Path.GetFileNameWithoutExtension(filePath) + "_negative.mid";
+        var outputPath = Path.Combine(Path.GetDirectoryName(filePath) ?? "", outputFileName);
+        
+        try
+        {
+            MidiProcessor.ExportFile(outputPath, negativeProgression, result.TimeDivision);
+            Console.WriteLine($"\nNegative harmony MIDI exported to: {outputPath}");
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"\nFailed to export MIDI: {ex.Message}");
+        }
     }
 
     private static void RunOnce(string notesInput, string keyInput, bool condense = false)
@@ -54,7 +159,7 @@ public class Program
 
             while (true)
             {
-                Console.Write("Enter Notes/Chords (or 'k' to change settings): ");
+                Console.Write("Enter Notes/Chords or MIDI file path (or 'k' to change settings): ");
                 var notesInput = Console.ReadLine()?.Trim();
 
                 if (string.IsNullOrWhiteSpace(notesInput)) continue;
@@ -74,7 +179,14 @@ public class Program
                 Console.WriteLine();
                 try
                 {
-                    ProcessInput(notesInput, keyInput, condense, omitDuplicates);
+                    if (notesInput.EndsWith(".mid", StringComparison.OrdinalIgnoreCase) || notesInput.EndsWith(".midi", StringComparison.OrdinalIgnoreCase))
+                    {
+                        ProcessMidiFile(notesInput, keyInput!, condense, omitDuplicates);
+                    }
+                    else
+                    {
+                        ProcessInput(notesInput, keyInput!, condense, omitDuplicates);
+                    }
                 }
                 catch (Exception ex)
                 {
@@ -89,11 +201,11 @@ public class Program
         Console.WriteLine("Goodbye!");
     }
 
-    public static void ProcessInput(string notesInput, string keyInput, bool condense = false, bool omitDuplicates = false)
+    public static List<List<Note>> ProcessInput(string notesInput, string keyInput, bool condense = false, bool omitDuplicates = false)
     {
         var hasExplicitOctaves = Regex.IsMatch(notesInput, @"\d");
         var groups = notesInput.Split('|', StringSplitOptions.TrimEntries | StringSplitOptions.RemoveEmptyEntries);
-        if (groups.Length is 0) return;
+        if (groups.Length is 0) return [];
 
         var initialKeyContext = KeyContext.Parse(keyInput);
         var currentKeyContext = initialKeyContext;
@@ -217,7 +329,18 @@ public class Program
             var (mappedNotes, negContext) = HarmonyMapper.MapNegativeWithContext(originalNotes, keyStr);
             
             // Re-apply naming based on negative context to ensure correct spelling of chromatic notes
-            mappedNotes = mappedNotes.Select(n => Note.FromAbsolutePitch(n.AbsolutePitch, negContext)).ToList();
+            mappedNotes = mappedNotes.Select(n => {
+                var m = Note.FromAbsolutePitch(n.AbsolutePitch, negContext);
+                return new Note {
+                    NoteName = m.NoteName,
+                    Accidental = m.Accidental,
+                    Octave = m.Octave,
+                    OriginalTime = n.OriginalTime,
+                    OriginalDuration = n.OriginalDuration,
+                    OriginalVelocity = n.OriginalVelocity,
+                    OriginalChannel = n.OriginalChannel
+                };
+            }).ToList();
             
             // Further refine spelling based on identified chord structure (e.g., prefer E# over F in C# Major)
             mappedNotes = Chord.ReSpell(mappedNotes, negContext);
@@ -230,12 +353,34 @@ public class Program
             if (mappedAvgOctave > 6)
             {
                 var shift = (int)Math.Floor(mappedAvgOctave - 5);
-                mappedNotes = mappedNotes.Select(n => Note.FromAbsolutePitch(n.AbsolutePitch - shift * 12, negContext)).ToList();
+                mappedNotes = mappedNotes.Select(n => {
+                    var m = Note.FromAbsolutePitch(n.AbsolutePitch - shift * 12, negContext);
+                    return new Note {
+                        NoteName = m.NoteName,
+                        Accidental = m.Accidental,
+                        Octave = m.Octave,
+                        OriginalTime = n.OriginalTime,
+                        OriginalDuration = n.OriginalDuration,
+                        OriginalVelocity = n.OriginalVelocity,
+                        OriginalChannel = n.OriginalChannel
+                    };
+                }).ToList();
             }
             else if (mappedAvgOctave < 2)
             {
                 var shift = (int)Math.Floor(3 - mappedAvgOctave);
-                mappedNotes = mappedNotes.Select(n => Note.FromAbsolutePitch(n.AbsolutePitch + shift * 12, negContext)).ToList();
+                mappedNotes = mappedNotes.Select(n => {
+                    var m = Note.FromAbsolutePitch(n.AbsolutePitch + shift * 12, negContext);
+                    return new Note {
+                        NoteName = m.NoteName,
+                        Accidental = m.Accidental,
+                        Octave = m.Octave,
+                        OriginalTime = n.OriginalTime,
+                        OriginalDuration = n.OriginalDuration,
+                        OriginalVelocity = n.OriginalVelocity,
+                        OriginalChannel = n.OriginalChannel
+                    };
+                }).ToList();
             }
             
             if (condense)
@@ -349,6 +494,7 @@ public class Program
             finalProgression.Add(string.IsNullOrEmpty(negName) ? $"[{negativeNotesStr}]" : negName);
         }
         Console.WriteLine($"\nResulting Progression: {string.Join(" - ", finalProgression)}");
+        return processedResults.Select(r => r.NegNotes).ToList();
     }
 
     private static List<Note> ParseSequenceWithContext(string[] inputs, Note? lastNoteInPreviousGroup)

@@ -41,6 +41,8 @@ public class KeyContext
         {
             mode = modeStrFromParts.ToLower() switch
             {
+                var s when s.Contains("harmonic") && (s.Contains("minor") || s.Contains("m")) => Mode.HarmonicMinor,
+                var s when s.Contains("harmonic") && (s.Contains("major") || s.Contains("maj")) => Mode.HarmonicMajor,
                 var s when s.StartsWith("maj") || s == "ionian" => Mode.Major,
                 var s when s.StartsWith("m") || s.StartsWith("min") || s == "aeolian" => Mode.Minor,
                 var s when s.StartsWith("dorian") => Mode.Dorian,

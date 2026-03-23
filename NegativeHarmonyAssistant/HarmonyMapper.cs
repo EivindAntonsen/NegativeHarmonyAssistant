@@ -32,9 +32,21 @@ public class HarmonyMapper
 
         var finalPreferSharps = negativeKeyContext.PreferSharps;
 
-        var mapped = noteList.Select(note => Note.FromAbsolutePitch(axisSum - note.AbsolutePitch, negativeKeyContext, finalPreferSharps))
-            .OrderBy(n => n.AbsolutePitch)
-            .ToList();
+        var mapped = noteList.Select(note => {
+            var m = Note.FromAbsolutePitch(axisSum - note.AbsolutePitch, negativeKeyContext, finalPreferSharps);
+            return new Note
+            {
+                NoteName = m.NoteName,
+                Accidental = m.Accidental,
+                Octave = m.Octave,
+                OriginalTime = note.OriginalTime,
+                OriginalDuration = note.OriginalDuration,
+                OriginalVelocity = note.OriginalVelocity,
+                OriginalChannel = note.OriginalChannel
+            };
+        })
+        .OrderBy(n => n.AbsolutePitch)
+        .ToList();
         return (mapped, negativeKeyContext);
     }
 

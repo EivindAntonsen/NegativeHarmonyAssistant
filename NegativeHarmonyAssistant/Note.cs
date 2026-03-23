@@ -7,6 +7,10 @@ public class Note
     public NoteName NoteName { get; init; }
     public Accidental? Accidental { get; init; }
     public Octave Octave { get; init; }
+    public long? OriginalTime { get; init; }
+    public long? OriginalDuration { get; init; }
+    public byte? OriginalVelocity { get; init; }
+    public byte? OriginalChannel { get; init; }
 
     public int PitchClass
     {
@@ -271,7 +275,17 @@ public class Note
 
         var pc = PitchClass;
         // Simplify double sharps/flats to nearest single accidental or natural
-        return FromAbsolutePitch(AbsolutePitch);
+        var simplified = FromAbsolutePitch(AbsolutePitch);
+        return new Note
+        {
+            NoteName = simplified.NoteName,
+            Accidental = simplified.Accidental,
+            Octave = simplified.Octave,
+            OriginalTime = this.OriginalTime,
+            OriginalDuration = this.OriginalDuration,
+            OriginalVelocity = this.OriginalVelocity,
+            OriginalChannel = this.OriginalChannel
+        };
     }
 
     public static List<Note> Condense(List<Note> notes, KeyContext? context = null)
@@ -293,7 +307,11 @@ public class Note
             {
                 NoteName = ordered[i].NoteName,
                 Accidental = ordered[i].Accidental,
-                Octave = condensedNote.Octave
+                Octave = condensedNote.Octave,
+                OriginalTime = ordered[i].OriginalTime,
+                OriginalDuration = ordered[i].OriginalDuration,
+                OriginalVelocity = ordered[i].OriginalVelocity,
+                OriginalChannel = ordered[i].OriginalChannel
             });
         }
 
