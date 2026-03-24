@@ -26,7 +26,7 @@ A sophisticated command-line tool for musicians and theorists to explore **Negat
 
 ## Installation
 
-You can choose to either download a release for your operating system, or you can download the code and build the application yourself. The release section contains builds for windows, mac and unix systems.
+You can choose to either download a [release](https://github.com/EivindAntonsen/NegativeHarmonyAssistant/releases) for your operating system, or you can download the code and build the application yourself. The release section contains builds for windows, mac and unix systems.
 
 ### Prerequisites
 - [.NET 10 SDK](https://dotnet.microsoft.com/download)
