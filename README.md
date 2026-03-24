@@ -4,7 +4,7 @@
 ![Test Coverage](https://img.shields.io/badge/Coverage-100%25-brightgreen)
 ![.NET Version](https://img.shields.io/badge/.NET-10.0-blue)
  
-A sophisticated command-line tool for musicians and theorists to explore **Negative Harmony**. It maps notes and chord progressions across the Tonic-Dominant axis, providing diatonically correct results and intelligent chord identification.
+A command-line tool for musicians to explore **Negative Harmony**. It maps notes and chord progressions across the Tonic-Dominant axis, providing diatonically correct results and intelligent chord identification.
 
 ## Key Features
 
@@ -13,7 +13,7 @@ A sophisticated command-line tool for musicians and theorists to explore **Negat
   - Input chords by name (e.g., `Cmaj7`, `Am7`, `F#dim`).
   - Input raw note sequences (e.g., `C4, Eb4, G4`).
   - Automatic identification of the resulting negative chords.
-- **Modulation Support**: Process complex progressions with key changes using the `[Key]` syntax (e.g., `Cmaj7 | [G Major] D7 | Gmaj7`).
+- **Modulation Support**: Process chord progressions with key changes using the `[Key]` syntax (e.g., `Cmaj7 | [G Major] D7 | Gmaj7`).
 - **Flexible Input Styles**:
   - **Notes with Octaves**: `C4, Eb4, G4`
   - **Ascending Note Sequences**: `C, E, G, C` (automatically calculates octaves).
