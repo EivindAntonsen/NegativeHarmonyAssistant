@@ -26,6 +26,8 @@ A sophisticated command-line tool for musicians and theorists to explore **Negat
 
 ## Installation
 
+You can choose to either download a release for your operating system, or you can download the code and build the application yourself. The release section contains builds for windows, mac and unix systems.
+
 ### Prerequisites
 - [.NET 10 SDK](https://dotnet.microsoft.com/download)
 
@@ -49,8 +51,9 @@ dotnet run --project NegativeHarmonyAssistant
 ```
 You will be prompted to:
 - Select a **Key** (e.g., `C Major`, `Eb Minor`).
-- Set **Options** (Condense chords, Omit duplicates).
+- Set **Options** (Condense chords, Omit duplicates, retain original contour).
 - Enter **Notes/Chords** or **Progressions**.
+- Or specify a file location for a midi file to read. Will not convert drum tracks.
 
 ### 2. One-Shot Mode
 Map a specific sequence directly from your terminal:
@@ -101,6 +104,3 @@ dotnet test
 ### CI/CD
 - **CI**: Every push to `main` triggers a build and full test suite.
 - **CD**: Pushing a tag (e.g., `v1.0.0`) automatically generates binaries for Windows, Linux, and macOS.
-
----
-*Created for musicians who want to flip their perspective.*
