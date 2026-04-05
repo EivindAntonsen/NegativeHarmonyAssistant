@@ -10,8 +10,9 @@ public class MidiProcessor
     public record MidiAnalysisResult(
         bool Success,
         string Message,
-        List<List<Note>>? ChordProgression = null,
-        TimeDivision? TimeDivision = null
+        List<List<List<Note>>>? Tracks = null, // Track -> List of Note Groups (Chords/Melodies)
+        TimeDivision? TimeDivision = null,
+        IEnumerable<MidiEvent>? TimeSignatureEvents = null
     );
 
     public static MidiAnalysisResult AnalyzeFile(string filePath)
@@ -19,74 +20,90 @@ public class MidiProcessor
         try
         {
             var midiFile = MidiFile.Read(filePath);
-            var tempoMap = midiFile.GetTempoMap();
             var timeDivision = midiFile.TimeDivision;
-            
-            // Extract notes from all tracks, but we might want to filter
-            var notes = midiFile.GetNotes();
-
-            if (!notes.Any())
-            {
-                return new MidiAnalysisResult(false, "Found no notes in the MIDI file.");
-            }
-
-            // Filter out percussion channel (usually channel 9 in 0-indexed)
-            var musicalNotes = notes.Where(n => n.Channel != 9).ToList();
-            
-            if (!musicalNotes.Any())
-            {
-                return new MidiAnalysisResult(false, "Midi track instrument is not supported (only non-drum tracks are supported).");
-            }
-
-            // Group notes by start time to find "stacked" chords
-            var groupedByTime = musicalNotes
-                .GroupBy(n => n.Time)
-                .OrderBy(g => g.Key)
+            var timeSignatureEvents = midiFile.GetTrackChunks()
+                .SelectMany(c => c.Events)
+                .OfType<TimeSignatureEvent>()
+                .Select(e => (MidiEvent)e.Clone())
                 .ToList();
 
-            var progression = new List<List<Note>>();
-            bool foundAnyChord = false;
+            var tracks = new List<List<List<Note>>>();
 
-            foreach (var group in groupedByTime)
+            foreach (var trackChunk in midiFile.GetTrackChunks())
             {
-                var chordNotes = group
-                    .Select(n => {
-                        var note = Note.FromAbsolutePitch(n.NoteNumber);
-                        return new Note {
-                            NoteName = note.NoteName,
-                            Accidental = note.Accidental,
-                            Octave = note.Octave,
-                            OriginalTime = n.Time,
-                            OriginalDuration = n.Length,
-                            OriginalVelocity = n.Velocity,
-                            OriginalChannel = n.Channel
-                        };
-                    })
+                var events = trackChunk.Events;
+                var notes = trackChunk.GetNotes();
+
+                if (!notes.Any())
+                {
+                    continue;
+                }
+
+                // Filter out percussion channel (usually channel 9 in 0-indexed)
+                // Also common to filter out channel 15/16 for some FX, but let's stick to channel 9 for now as per previous requirement.
+                var musicalNotes = notes.Where(n => n.Channel != 9).ToList();
+
+                if (!musicalNotes.Any())
+                {
+                    continue;
+                }
+
+                // Group notes by start time to find "stacked" chords
+                var groupedByTime = musicalNotes
+                    .GroupBy(n => n.Time)
+                    .OrderBy(g => g.Key)
                     .ToList();
 
-                progression.Add(chordNotes);
-                if (chordNotes.Count >= 3)
+                var trackProgression = new List<List<Note>>();
+
+                foreach (var group in groupedByTime)
                 {
-                    foundAnyChord = true;
+                    // Find the last ProgramChangeEvent that occurred at or before this group's time
+                    // DryWetMidi Events in TrackChunk are ordered by Absolute Time if handled correctly,
+                    // but DeltaTime is what's stored. GetNotes() provides absolute time.
+                    // We should use an event manager or calculate absolute times for events.
+                    long accumulatedTime = 0;
+                    ProgramChangeEvent? lastProgramChange = null;
+                    foreach (var e in events)
+                    {
+                        accumulatedTime += e.DeltaTime;
+                        if (accumulatedTime > group.Key) break;
+                        if (e is ProgramChangeEvent pce) lastProgramChange = pce;
+                    }
+
+                    var chordNotes = group
+                        .Select(n =>
+                        {
+                            var note = Note.FromAbsolutePitch(n.NoteNumber);
+                            return new Note
+                            {
+                                NoteName = note.NoteName,
+                                Accidental = note.Accidental,
+                                Octave = note.Octave,
+                                OriginalTime = n.Time,
+                                OriginalDuration = n.Length,
+                                OriginalVelocity = n.Velocity,
+                                OriginalChannel = n.Channel,
+                                OriginalInstrument = lastProgramChange?.ProgramNumber
+                            };
+                        })
+                        .ToList();
+
+                    trackProgression.Add(chordNotes);
+                }
+
+                if (trackProgression.Any())
+                {
+                    tracks.Add(trackProgression);
                 }
             }
 
-            if (!foundAnyChord && progression.Any(p => p.Count > 0))
+            if (!tracks.Any())
             {
-                // If we found notes but none formed a chord (>= 3 notes at once)
-                // we should check if they are just melodies
-                if (progression.All(p => p.Count < 3))
-                {
-                    return new MidiAnalysisResult(false, "Found notes, but unable to find chords (the notes don't start at the same time).", progression, timeDivision);
-                }
+                return new MidiAnalysisResult(false, "Found no musical notes in any MIDI track.");
             }
 
-            if (!progression.Any())
-            {
-                return new MidiAnalysisResult(false, "Found no chord progression.");
-            }
-
-            return new MidiAnalysisResult(true, "Found chord progression and extracted chords.", progression, timeDivision);
+            return new MidiAnalysisResult(true, "Found notes and extracted sequence from multiple tracks.", tracks, timeDivision, timeSignatureEvents);
         }
         catch (Exception ex)
         {
@@ -94,56 +111,89 @@ public class MidiProcessor
         }
     }
 
-    public static void ExportFile(string filePath, List<List<Note>> progression, TimeDivision? timeDivision = null)
+    public static void ExportFile(string filePath, List<List<List<Note>>> tracks, TimeDivision? timeDivision = null, IEnumerable<MidiEvent>? timeSignatureEvents = null)
     {
         var midiFile = new MidiFile();
         if (timeDivision != null)
         {
             midiFile.TimeDivision = timeDivision;
         }
-        var trackChunk = new TrackChunk();
 
-        var allNotes = progression.SelectMany(c => c).ToList();
-        
-        if (allNotes.Any(n => n.OriginalTime.HasValue))
+        if (timeSignatureEvents != null && timeSignatureEvents.Any())
         {
-            var midiNotes = allNotes.Select(n => new Melanchall.DryWetMidi.Interaction.Note(
-                (SevenBitNumber)n.AbsolutePitch,
-                n.OriginalDuration ?? 480,
-                n.OriginalTime ?? 0)
+            var tempoTrack = new TrackChunk();
+            foreach (var tsEvent in timeSignatureEvents)
             {
-                Velocity = (SevenBitNumber)(n.OriginalVelocity ?? 100),
-                Channel = (FourBitNumber)(n.OriginalChannel ?? 0)
-            }).ToList();
-
-            using (var notesManager = trackChunk.ManageNotes())
-            {
-                notesManager.Objects.Add(midiNotes);
+                tempoTrack.Events.Add(tsEvent.Clone());
             }
+            midiFile.Chunks.Add(tempoTrack);
         }
-        else
+
+        foreach (var trackProgression in tracks)
         {
-            // Fallback for non-MIDI inputs
-            long currentTime = 0;
-            foreach (var chord in progression)
+            var trackChunk = new TrackChunk();
+            var allNotes = trackProgression.SelectMany(c => c).ToList();
+
+            if (allNotes.Any(n => n.OriginalInstrument.HasValue))
             {
-                var chordNotes = chord.Select(n => new Melanchall.DryWetMidi.Interaction.Note(
-                    (SevenBitNumber)n.AbsolutePitch,
-                    480,
-                    currentTime)
+                var instrumentGroups = allNotes
+                    .GroupBy(n => new { n.OriginalInstrument, n.OriginalChannel })
+                    .ToList();
+
+                foreach (var group in instrumentGroups)
                 {
-                    Velocity = (SevenBitNumber)100
+                    if (group.Key.OriginalInstrument.HasValue)
+                    {
+                        trackChunk.Events.Add(new ProgramChangeEvent((SevenBitNumber)group.Key.OriginalInstrument.Value)
+                        {
+                            Channel = (FourBitNumber)(group.Key.OriginalChannel ?? 0),
+                            DeltaTime = 0
+                        });
+                    }
+                }
+            }
+
+            if (allNotes.Any(n => n.OriginalTime.HasValue))
+            {
+                var midiNotes = allNotes.Select(n => new Melanchall.DryWetMidi.Interaction.Note(
+                    (SevenBitNumber)n.AbsolutePitch,
+                    n.OriginalDuration ?? 480,
+                    n.OriginalTime ?? 0)
+                {
+                    Velocity = (SevenBitNumber)(n.OriginalVelocity ?? 100),
+                    Channel = (FourBitNumber)(n.OriginalChannel ?? 0)
                 }).ToList();
 
                 using (var notesManager = trackChunk.ManageNotes())
                 {
-                    notesManager.Objects.Add(chordNotes);
+                    notesManager.Objects.Add(midiNotes);
                 }
-                currentTime += 480;
             }
+            else
+            {
+                // Fallback for non-MIDI inputs or missing metadata
+                long currentTime = 0;
+                foreach (var chord in trackProgression)
+                {
+                    var chordNotes = chord.Select(n => new Melanchall.DryWetMidi.Interaction.Note(
+                        (SevenBitNumber)n.AbsolutePitch,
+                        480,
+                        currentTime)
+                    {
+                        Velocity = (SevenBitNumber)100
+                    }).ToList();
+
+                    using (var notesManager = trackChunk.ManageNotes())
+                    {
+                        notesManager.Objects.Add(chordNotes);
+                    }
+                    currentTime += 480;
+                }
+            }
+
+            midiFile.Chunks.Add(trackChunk);
         }
 
-        midiFile.Chunks.Add(trackChunk);
         midiFile.Write(filePath, true);
     }
 }

@@ -11,6 +11,7 @@ public class Note
     public long? OriginalDuration { get; init; }
     public byte? OriginalVelocity { get; init; }
     public byte? OriginalChannel { get; init; }
+    public byte? OriginalInstrument { get; init; }
 
     public int PitchClass
     {

@@ -29,14 +29,18 @@ public class Program
 
         if (args.Length >= 2)
         {
-            RunOnce(args[0], args[1]);
+            var condense = args.Contains("--condense");
+            var preserve = args.Contains("--preserve");
+            var notes = args[0];
+            var key = args[1];
+            RunOnce(notes, key, condense, preserve);
             return;
         }
 
         RunInteractive();
     }
 
-    private static void ProcessMidiFile(string filePath, string keyInput, bool condense = true, bool omitDuplicates = true)
+    private static void ProcessMidiFile(string filePath, string keyInput, bool condense = true, bool omitDuplicates = true, bool preserveStructure = false)
     {
         Console.WriteLine($"Processing MIDI file: {filePath}");
         var result = MidiProcessor.AnalyzeFile(filePath);
@@ -46,72 +50,82 @@ public class Program
             Console.ForegroundColor = ConsoleColor.Red;
             Console.WriteLine(result.Message);
             Console.ResetColor();
-
-            if (result.ChordProgression != null && result.ChordProgression.Any())
-            {
-                 Console.WriteLine("\nNotes found (but not chords):");
-                 foreach (var group in result.ChordProgression)
-                 {
-                     Console.WriteLine(string.Join(", ", group));
-                 }
-            }
             return;
         }
 
         Console.WriteLine(result.Message);
         Console.WriteLine("----------------------------------------");
 
-        var progression = result.ChordProgression!;
-        
-        var negativeProgression = new List<List<Note>>();
-        foreach (var chord in progression)
+        // Calculate a global axis based on the entire MIDI file (all tracks) to prevent large jumps
+        int? globalAxisSum = null;
+        var allMidiNotes = result.Tracks!.SelectMany(t => t).SelectMany(c => c).ToList();
+        if (allMidiNotes.Any())
         {
-            // Process each chord group individually to preserve metadata accurately
-            var chordInput = string.Join(", ", chord.Select(n => n.ToString(true)));
-            var processedGroups = ProcessInput(chordInput, keyInput, condense, omitDuplicates);
-            if (processedGroups.Any())
-            {
-                var mappedChord = processedGroups[0];
-                
-                // If the number of notes is different (e.g. because of omitDuplicates or internal parsing issues), 
-                // we should try to match metadata as best as we can.
-                // But ProcessInput now preserves metadata internally, so if the count matches, it's already there.
-                // If the count DOES NOT match (e.g. OmitDuplicates was on), we might need to be careful.
-                
-                // Safety check: If metadata is somehow missing but we have original notes, try to fill it.
-                // This shouldn't be strictly necessary now but helps if some path still misses it.
-                if (mappedChord.Count == chord.Count)
-                {
-                    for (int i = 0; i < mappedChord.Count; i++)
-                    {
-                        if (!mappedChord[i].OriginalTime.HasValue)
-                        {
-                            var mappedNote = mappedChord[i];
-                            var originalNote = chord[i];
-                            mappedChord[i] = new Note
-                            {
-                                NoteName = mappedNote.NoteName,
-                                Accidental = mappedNote.Accidental,
-                                Octave = mappedNote.Octave,
-                                OriginalTime = originalNote.OriginalTime,
-                                OriginalDuration = originalNote.OriginalDuration,
-                                OriginalVelocity = originalNote.OriginalVelocity,
-                                OriginalChannel = originalNote.OriginalChannel
-                            };
-                        }
-                    }
-                }
-
-                negativeProgression.Add(mappedChord);
-            }
+            globalAxisSum = HarmonyMapper.CalculateAxisSum(allMidiNotes, keyInput);
         }
 
-        var outputFileName = Path.GetFileNameWithoutExtension(filePath) + "_negative.mid";
+        var negativeTracks = new List<List<List<Note>>>();
+        
+        foreach (var track in result.Tracks!)
+        {
+            var negativeProgression = new List<List<Note>>();
+            foreach (var chord in track)
+            {
+                // Process each chord group individually to preserve metadata accurately
+                var chordInput = string.Join(", ", chord.Select(n => n.ToString(true)));
+                
+                // We bypass ProcessInput's own axis calculation by calling it with already-parsed notes 
+                // OR we could modify ProcessInput to accept a customAxisSum.
+                // Actually, let's call the mapping directly or make ProcessInput more flexible.
+                // But ProcessInput does a lot of other things (naming, re-spelling, octave shifting).
+                
+                // Let's modify ProcessInput signature or use an internal version.
+                var processedGroups = ProcessInputInternal(chordInput, keyInput, condense, omitDuplicates, preserveStructure, globalAxisSum);
+                if (processedGroups.Any())
+                {
+                    var mappedChord = processedGroups[0];
+                    
+                    // Safety check: If metadata is somehow missing but we have original notes, try to fill it.
+                    if (mappedChord.Count == chord.Count)
+                    {
+                        for (int i = 0; i < mappedChord.Count; i++)
+                        {
+                            if (!mappedChord[i].OriginalTime.HasValue)
+                            {
+                                var mappedNote = mappedChord[i];
+                                var originalNote = chord[i];
+                                mappedChord[i] = new Note
+                                {
+                                    NoteName = mappedNote.NoteName,
+                                    Accidental = mappedNote.Accidental,
+                                    Octave = mappedNote.Octave,
+                                    OriginalTime = originalNote.OriginalTime,
+                                    OriginalDuration = originalNote.OriginalDuration,
+                                    OriginalVelocity = originalNote.OriginalVelocity,
+                                    OriginalChannel = originalNote.OriginalChannel,
+                                    OriginalInstrument = originalNote.OriginalInstrument
+                                };
+                            }
+                        }
+                    }
+
+                    negativeProgression.Add(mappedChord);
+                }
+            }
+            negativeTracks.Add(negativeProgression);
+        }
+
+        var suffix = "_negative";
+        if (condense) suffix += "_condensed";
+        if (omitDuplicates) suffix += "_omitted";
+        if (preserveStructure) suffix += "_preserved";
+        
+        var outputFileName = Path.GetFileNameWithoutExtension(filePath) + suffix + ".mid";
         var outputPath = Path.Combine(Path.GetDirectoryName(filePath) ?? "", outputFileName);
         
         try
         {
-            MidiProcessor.ExportFile(outputPath, negativeProgression, result.TimeDivision);
+            MidiProcessor.ExportFile(outputPath, negativeTracks, result.TimeDivision, result.TimeSignatureEvents);
             Console.WriteLine($"\nNegative harmony MIDI exported to: {outputPath}");
         }
         catch (Exception ex)
@@ -120,11 +134,11 @@ public class Program
         }
     }
 
-    private static void RunOnce(string notesInput, string keyInput, bool condense = false)
+    private static void RunOnce(string notesInput, string keyInput, bool condense = false, bool preserveStructure = false)
     {
         try
         {
-            ProcessInput(notesInput, keyInput, condense);
+            ProcessInput(notesInput, keyInput, condense, preserveStructure: preserveStructure);
         }
         catch (Exception ex)
         {
@@ -154,7 +168,13 @@ public class Program
             if (omitDuplicatesInput is "exit" or "q") break;
             var omitDuplicates = omitDuplicatesInput == "y" || omitDuplicatesInput == "yes";
 
-            Console.WriteLine($"\nSelected Key: {keyInput} (Condense: {(condense ? "Yes" : "No")}, Omit Duplicates: {(omitDuplicates ? "Yes" : "No")})");
+            Console.Write("Preserve structural direction? (experimental) (y/n): ");
+            var preserveStructureInput = Console.ReadLine()?.Trim().ToLower();
+            if (preserveStructureInput == "?") continue;
+            if (preserveStructureInput is "exit" or "q") break;
+            var preserveStructure = preserveStructureInput == "y" || preserveStructureInput == "yes";
+
+            Console.WriteLine($"\nSelected Key: {keyInput} (Condense: {(condense ? "Yes" : "No")}, Omit Duplicates: {(omitDuplicates ? "Yes" : "No")}, Preserve Structure: {(preserveStructure ? "Yes" : "No")})");
             Console.WriteLine("----------------------------------------");
 
             while (true)
@@ -181,11 +201,11 @@ public class Program
                 {
                     if (notesInput.EndsWith(".mid", StringComparison.OrdinalIgnoreCase) || notesInput.EndsWith(".midi", StringComparison.OrdinalIgnoreCase))
                     {
-                        ProcessMidiFile(notesInput, keyInput!, condense, omitDuplicates);
+                        ProcessMidiFile(notesInput, keyInput!, condense, omitDuplicates, preserveStructure);
                     }
                     else
                     {
-                        ProcessInput(notesInput, keyInput!, condense, omitDuplicates);
+                        ProcessInput(notesInput, keyInput!, condense, omitDuplicates, preserveStructure);
                     }
                 }
                 catch (Exception ex)
@@ -201,7 +221,17 @@ public class Program
         Console.WriteLine("Goodbye!");
     }
 
-    public static List<List<Note>> ProcessInput(string notesInput, string keyInput, bool condense = false, bool omitDuplicates = false)
+    public static List<List<Note>> ProcessInput(string notesInput, string keyInput, bool condense = false, bool omitDuplicates = false, bool preserveStructure = false)
+    {
+        return ProcessInputInternal(notesInput, keyInput, condense, omitDuplicates, preserveStructure);
+    }
+
+    public static List<List<Note>> ProcessNotes(List<List<Note>> notes, string keyInput, bool condense = false, bool omitDuplicates = false, bool preserveStructure = false, int? customAxisSum = null)
+    {
+        return ProcessInputInternal(notes, keyInput, condense, omitDuplicates, preserveStructure, customAxisSum);
+    }
+
+    private static List<List<Note>> ProcessInputInternal(string notesInput, string keyInput, bool condense = false, bool omitDuplicates = false, bool preserveStructure = false, int? customAxisSum = null)
     {
         var hasExplicitOctaves = Regex.IsMatch(notesInput, @"\d");
         var groups = notesInput.Split('|', StringSplitOptions.TrimEntries | StringSplitOptions.RemoveEmptyEntries);
@@ -306,9 +336,25 @@ public class Program
             }
         }
 
-        // Use the initial key for the base axis calculation, but we'll apply it per modulation context.
-        // Actually, if we have modulations, the axis might change.
-        // Let's calculate the axisSum for each group based on its keyContext.
+        return ProcessInputInternal(chordGroups, keyInput, condense, omitDuplicates, preserveStructure, customAxisSum, hasExplicitOctaves, originalNames, keyContextsPerGroup, modulationsPerGroup, isChordMode);
+    }
+
+    private static List<List<Note>> ProcessInputInternal(List<List<Note>> chordGroups, string keyInput, bool condense = false, bool omitDuplicates = false, bool preserveStructure = false, int? customAxisSum = null, bool hasExplicitOctaves = true, List<string>? originalNames = null, List<KeyContext>? keyContextsPerGroup = null, List<string?>? modulationsPerGroup = null, bool isChordMode = false)
+    {
+        if (originalNames == null) originalNames = chordGroups.Select(g => "").ToList();
+        if (keyContextsPerGroup == null) keyContextsPerGroup = chordGroups.Select(g => KeyContext.Parse(keyInput)).ToList();
+        if (modulationsPerGroup == null) modulationsPerGroup = chordGroups.Select(g => (string?)null).ToList();
+
+        // Calculate a global axis based on the entire progression to prevent large jumps
+        int? globalAxisSum = customAxisSum;
+        if (!globalAxisSum.HasValue && chordGroups.Any())
+        {
+            var allNotes = chordGroups.SelectMany(g => g).ToList();
+            if (allNotes.Any())
+            {
+                globalAxisSum = HarmonyMapper.CalculateAxisSum(allNotes, keyInput);
+            }
+        }
 
         var processedResults = new List<(string NegName, List<Note> NegNotes)>();
         for (var i = 0; i < chordGroups.Count; i++)
@@ -316,7 +362,9 @@ public class Program
             var originalNotes = chordGroups[i];
             var context = keyContextsPerGroup[i];
             
-            // We use the context-specific axis calculation.
+            // We use the context-specific axis calculation unless it's the main key,
+            // but for a single sequence, we should stick to the global axis if possible.
+            // If modulation happened, we might need to adjust, but for now let's try global.
             var accStr = context.Tonic.Accidental switch
             {
                 Accidental.DoubleSharp => "##",
@@ -326,7 +374,12 @@ public class Program
                 _ => ""
             };
             var keyStr = $"{context.Tonic.NoteName}{accStr} {context.Mode}";
-            var (mappedNotes, negContext) = HarmonyMapper.MapNegativeWithContext(originalNotes, keyStr);
+            
+            var (mappedNotes, negContext) = HarmonyMapper.MapNegativeWithContext(
+                originalNotes, 
+                keyStr, 
+                customAxisSum: globalAxisSum,
+                preserveStructure: preserveStructure);
             
             // Re-apply naming based on negative context to ensure correct spelling of chromatic notes
             mappedNotes = mappedNotes.Select(n => {
@@ -338,7 +391,8 @@ public class Program
                     OriginalTime = n.OriginalTime,
                     OriginalDuration = n.OriginalDuration,
                     OriginalVelocity = n.OriginalVelocity,
-                    OriginalChannel = n.OriginalChannel
+                    OriginalChannel = n.OriginalChannel,
+                    OriginalInstrument = n.OriginalInstrument
                 };
             }).ToList();
             
@@ -348,13 +402,15 @@ public class Program
             // Simplify double sharps/flats for readability
             mappedNotes = mappedNotes.Select(n => n.Simplify()).ToList();
 
-            // Shift octave if necessary to stay within reasonable range (3-5) while preserving intervals
+            // Match the output average octave to the input average octave to preserve register
+            var inputAvgOctave = originalNotes.Average(n => n.Octave);
             var mappedAvgOctave = mappedNotes.Average(n => n.Octave);
-            if (mappedAvgOctave > 6)
+            var octaveShift = (int)Math.Round(inputAvgOctave - mappedAvgOctave);
+            
+            if (octaveShift != 0)
             {
-                var shift = (int)Math.Floor(mappedAvgOctave - 5);
                 mappedNotes = mappedNotes.Select(n => {
-                    var m = Note.FromAbsolutePitch(n.AbsolutePitch - shift * 12, negContext);
+                    var m = Note.FromAbsolutePitch(n.AbsolutePitch + octaveShift * 12, negContext);
                     return new Note {
                         NoteName = m.NoteName,
                         Accidental = m.Accidental,
@@ -362,23 +418,8 @@ public class Program
                         OriginalTime = n.OriginalTime,
                         OriginalDuration = n.OriginalDuration,
                         OriginalVelocity = n.OriginalVelocity,
-                        OriginalChannel = n.OriginalChannel
-                    };
-                }).ToList();
-            }
-            else if (mappedAvgOctave < 2)
-            {
-                var shift = (int)Math.Floor(3 - mappedAvgOctave);
-                mappedNotes = mappedNotes.Select(n => {
-                    var m = Note.FromAbsolutePitch(n.AbsolutePitch + shift * 12, negContext);
-                    return new Note {
-                        NoteName = m.NoteName,
-                        Accidental = m.Accidental,
-                        Octave = m.Octave,
-                        OriginalTime = n.OriginalTime,
-                        OriginalDuration = n.OriginalDuration,
-                        OriginalVelocity = n.OriginalVelocity,
-                        OriginalChannel = n.OriginalChannel
+                        OriginalChannel = n.OriginalChannel,
+                        OriginalInstrument = n.OriginalInstrument
                     };
                 }).ToList();
             }
@@ -386,6 +427,65 @@ public class Program
             if (condense)
             {
                 mappedNotes = Note.Condense(mappedNotes, negContext);
+            }
+
+            // Apply instrument range limits
+            if (mappedNotes.Any())
+            {
+                var instrument = mappedNotes.First().OriginalInstrument;
+                if (instrument.HasValue)
+                {
+                    (int? minPitch, int? maxPitch) = instrument.Value switch
+                    {
+                        >= 24 and <= 31 => (23, 88), // Guitars (Acoustic, Electric) -> B0 (MIDI 23) to E6 (MIDI 88)
+                        >= 32 and <= 39 => (23, 67), // Basses -> B0 (MIDI 23) to G4 (MIDI 67)
+                        _ => ((int?)null, (int?)null)
+                    };
+
+                    if (minPitch.HasValue)
+                    {
+                        var lowestCurrent = mappedNotes.Min(n => n.AbsolutePitch);
+                        if (lowestCurrent < minPitch.Value)
+                        {
+                            var shift = (int)Math.Ceiling((minPitch.Value - lowestCurrent) / 12.0);
+                            mappedNotes = mappedNotes.Select(n => {
+                                var m = Note.FromAbsolutePitch(n.AbsolutePitch + shift * 12, negContext);
+                                return new Note {
+                                    NoteName = m.NoteName,
+                                    Accidental = m.Accidental,
+                                    Octave = m.Octave,
+                                    OriginalTime = n.OriginalTime,
+                                    OriginalDuration = n.OriginalDuration,
+                                    OriginalVelocity = n.OriginalVelocity,
+                                    OriginalChannel = n.OriginalChannel,
+                                    OriginalInstrument = n.OriginalInstrument
+                                };
+                            }).ToList();
+                        }
+                    }
+
+                    if (maxPitch.HasValue)
+                    {
+                        var highestCurrent = mappedNotes.Max(n => n.AbsolutePitch);
+                        if (highestCurrent > maxPitch.Value)
+                        {
+                            var shift = (int)Math.Ceiling((highestCurrent - maxPitch.Value) / 12.0);
+                            mappedNotes = mappedNotes.Select(n => {
+                                var m = Note.FromAbsolutePitch(n.AbsolutePitch - shift * 12, negContext);
+                                return new Note {
+                                    NoteName = m.NoteName,
+                                    Accidental = m.Accidental,
+                                    Octave = m.Octave,
+                                    OriginalTime = n.OriginalTime,
+                                    OriginalDuration = n.OriginalDuration,
+                                    OriginalVelocity = n.OriginalVelocity,
+                                    OriginalChannel = n.OriginalChannel,
+                                    OriginalInstrument = n.OriginalInstrument
+                                };
+                            }).ToList();
+                        }
+                    }
+                }
             }
 
             if (omitDuplicates)
