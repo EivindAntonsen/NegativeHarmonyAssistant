@@ -4,7 +4,7 @@
 ![Test Coverage](https://img.shields.io/badge/Coverage-100%25-brightgreen)
 ![.NET Version](https://img.shields.io/badge/.NET-10.0-blue)
  
-A sophisticated command-line tool for musicians and theorists to explore **Negative Harmony**. It maps notes and chord progressions across the Tonic-Dominant axis, providing diatonically correct results and intelligent chord identification.
+A command-line tool for musicians to explore **Negative Harmony**. It maps notes and chord progressions across the Tonic-Dominant axis, providing diatonically correct results and intelligent chord identification.
 
 ## Key Features
 
@@ -13,7 +13,7 @@ A sophisticated command-line tool for musicians and theorists to explore **Negat
   - Input chords by name (e.g., `Cmaj7`, `Am7`, `F#dim`).
   - Input raw note sequences (e.g., `C4, Eb4, G4`).
   - Automatic identification of the resulting negative chords.
-- **Modulation Support**: Process complex progressions with key changes using the `[Key]` syntax (e.g., `Cmaj7 | [G Major] D7 | Gmaj7`).
+- **Modulation Support**: Process chord progressions with key changes using the `[Key]` syntax (e.g., `Cmaj7 | [G Major] D7 | Gmaj7`).
 - **Flexible Input Styles**:
   - **Notes with Octaves**: `C4, Eb4, G4`
   - **Ascending Note Sequences**: `C, E, G, C` (automatically calculates octaves).
@@ -25,6 +25,8 @@ A sophisticated command-line tool for musicians and theorists to explore **Negat
 - **Diatonic Precision**: An advanced naming engine ensures results use correct accidentals for the target negative key.
 
 ## Installation
+
+You can choose to either download a [release](https://github.com/EivindAntonsen/NegativeHarmonyAssistant/releases) for your operating system, or you can download the code and build the application yourself. The release section contains builds for windows, mac and unix systems.
 
 ### Prerequisites
 - [.NET 10 SDK](https://dotnet.microsoft.com/download)
@@ -49,8 +51,9 @@ dotnet run --project NegativeHarmonyAssistant
 ```
 You will be prompted to:
 - Select a **Key** (e.g., `C Major`, `Eb Minor`).
-- Set **Options** (Condense chords, Omit duplicates).
+- Set **Options** (Condense chords, Omit duplicates, retain original contour).
 - Enter **Notes/Chords** or **Progressions**.
+- Or specify a file location for a midi file to read. Will not convert drum tracks.
 
 ### 2. One-Shot Mode
 Map a specific sequence directly from your terminal:
@@ -101,6 +104,3 @@ dotnet test
 ### CI/CD
 - **CI**: Every push to `main` triggers a build and full test suite.
 - **CD**: Pushing a tag (e.g., `v1.0.0`) automatically generates binaries for Windows, Linux, and macOS.
-
----
-*Created for musicians who want to flip their perspective.*
