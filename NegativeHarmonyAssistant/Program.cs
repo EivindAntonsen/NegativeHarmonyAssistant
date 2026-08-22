@@ -13,17 +13,15 @@ public class Program
 
             if (string.IsNullOrEmpty(keyFromArgs))
             {
-                Console.Write("Enter Key (e.g., 'C Major', 'Eb Minor'): ");
+                Console.Write("Enter Key (e.g., 'C Major', 'Eb Minor') [leave empty to infer]: ");
                 keyFromArgs = Console.ReadLine()?.Trim();
             }
 
-            if (string.IsNullOrEmpty(keyFromArgs))
-            {
-                Console.WriteLine("Key is required for MIDI processing.");
-                return;
-            }
-
-            ProcessMidiFile(midiPath, keyFromArgs);
+            var condense = args.Contains("--condense");
+            var omit = args.Contains("--omit");
+            var preserve = args.Contains("--preserve");
+            var shortest = args.Contains("--shortest");
+            ProcessMidiFile(midiPath, keyFromArgs, condense, omit, preserve, shortest);
             return;
         }
 
@@ -31,16 +29,17 @@ public class Program
         {
             var condense = args.Contains("--condense");
             var preserve = args.Contains("--preserve");
+            var shortest = args.Contains("--shortest");
             var notes = args[0];
             var key = args[1];
-            RunOnce(notes, key, condense, preserve);
+            RunOnce(notes, key, condense, preserve, shortest);
             return;
         }
 
         RunInteractive();
     }
 
-    private static void ProcessMidiFile(string filePath, string keyInput, bool condense = true, bool omitDuplicates = true, bool preserveStructure = false)
+    private static void ProcessMidiFile(string filePath, string? keyInput, bool condense = true, bool omitDuplicates = true, bool preserveStructure = false, bool shortestDistance = false)
     {
         Console.WriteLine($"Processing MIDI file: {filePath}");
         var result = MidiProcessor.AnalyzeFile(filePath);
@@ -56,12 +55,26 @@ public class Program
         Console.WriteLine(result.Message);
         Console.WriteLine("----------------------------------------");
 
+        var allMidiNotes = result.Tracks!.SelectMany(t => t).SelectMany(c => c).ToList();
+
+        if (string.IsNullOrWhiteSpace(keyInput))
+        {
+            if (!allMidiNotes.Any())
+            {
+                Console.WriteLine("No notes found in MIDI file to infer key.");
+                return;
+            }
+            var allChords = result.Tracks!.SelectMany(t => t);
+            var inference = KeyInferrer.InferWithConfidence(allChords);
+            keyInput = inference.Key.ToString();
+            DisplayInferenceResult(inference);
+        }
+
         // Calculate a global axis based on the entire MIDI file (all tracks) to prevent large jumps
         int? globalAxisSum = null;
-        var allMidiNotes = result.Tracks!.SelectMany(t => t).SelectMany(c => c).ToList();
         if (allMidiNotes.Any())
         {
-            globalAxisSum = HarmonyMapper.CalculateAxisSum(allMidiNotes, keyInput);
+            globalAxisSum = HarmonyMapper.CalculateAxisSum(allMidiNotes, keyInput!);
         }
 
         var negativeTracks = new List<List<List<Note>>>();
@@ -80,7 +93,7 @@ public class Program
                 // But ProcessInput does a lot of other things (naming, re-spelling, octave shifting).
                 
                 // Let's modify ProcessInput signature or use an internal version.
-                var processedGroups = ProcessInputInternal(chordInput, keyInput, condense, omitDuplicates, preserveStructure, globalAxisSum);
+                var processedGroups = ProcessInputInternal(chordInput, keyInput, condense, omitDuplicates, preserveStructure, shortestDistance, globalAxisSum);
                 if (processedGroups.Any())
                 {
                     var mappedChord = processedGroups[0];
@@ -119,14 +132,15 @@ public class Program
         if (condense) suffix += "_condensed";
         if (omitDuplicates) suffix += "_omitted";
         if (preserveStructure) suffix += "_preserved";
+        if (shortestDistance) suffix += "_shortest";
         
         var outputFileName = Path.GetFileNameWithoutExtension(filePath) + suffix + ".mid";
         var outputPath = Path.Combine(Path.GetDirectoryName(filePath) ?? "", outputFileName);
         
         try
         {
-            MidiProcessor.ExportFile(outputPath, negativeTracks, result.TimeDivision, result.TimeSignatureEvents);
-            Console.WriteLine($"\nNegative harmony MIDI exported to: {outputPath}");
+            var exportedPath = MidiProcessor.ExportFile(outputPath, negativeTracks, result.TimeDivision, result.TimeSignatureEvents);
+            Console.WriteLine($"\nNegative harmony MIDI exported to: {exportedPath}");
         }
         catch (Exception ex)
         {
@@ -134,11 +148,11 @@ public class Program
         }
     }
 
-    private static void RunOnce(string notesInput, string keyInput, bool condense = false, bool preserveStructure = false)
+    private static void RunOnce(string notesInput, string? keyInput, bool condense = false, bool preserveStructure = false, bool shortestDistance = false)
     {
         try
         {
-            ProcessInput(notesInput, keyInput, condense, preserveStructure: preserveStructure);
+            ProcessInput(notesInput, keyInput, condense, preserveStructure: preserveStructure, shortestDistance: shortestDistance);
         }
         catch (Exception ex)
         {
@@ -150,11 +164,13 @@ public class Program
     {
         while (true)
         {
-            Console.Write("Enter Key (e.g., 'C Major', 'Eb Minor'): ");
+            Console.Write("Enter Key (e.g., 'C Major', 'Eb Minor') [leave empty to infer]: ");
             var keyInput = Console.ReadLine()?.Trim();
-            if (string.IsNullOrWhiteSpace(keyInput) || keyInput.Equals("exit", StringComparison.OrdinalIgnoreCase) || keyInput.Equals("q", StringComparison.OrdinalIgnoreCase))
+            if (keyInput?.Equals("exit", StringComparison.OrdinalIgnoreCase) == true || keyInput?.Equals("q", StringComparison.OrdinalIgnoreCase) == true)
                 break;
             if (keyInput == "?") continue;
+
+            if (string.IsNullOrWhiteSpace(keyInput)) keyInput = null;
 
             Console.Write("Condense chords? (y/n): ");
             var condenseInput = Console.ReadLine()?.Trim().ToLower();
@@ -174,7 +190,13 @@ public class Program
             if (preserveStructureInput is "exit" or "q") break;
             var preserveStructure = preserveStructureInput == "y" || preserveStructureInput == "yes";
 
-            Console.WriteLine($"\nSelected Key: {keyInput} (Condense: {(condense ? "Yes" : "No")}, Omit Duplicates: {(omitDuplicates ? "Yes" : "No")}, Preserve Structure: {(preserveStructure ? "Yes" : "No")})");
+            Console.Write("Ensure shortest distance for reflected notes? (y/n): ");
+            var shortestDistanceInput = Console.ReadLine()?.Trim().ToLower();
+            if (shortestDistanceInput == "?") continue;
+            if (shortestDistanceInput is "exit" or "q") break;
+            var shortestDistance = shortestDistanceInput == "y" || shortestDistanceInput == "yes";
+
+            Console.WriteLine($"\nSelected Key: {(keyInput ?? "Auto-infer")} (Condense: {(condense ? "Yes" : "No")}, Omit Duplicates: {(omitDuplicates ? "Yes" : "No")}, Preserve Structure: {(preserveStructure ? "Yes" : "No")}, Shortest Distance: {(shortestDistance ? "Yes" : "No")})");
             Console.WriteLine("----------------------------------------");
 
             while (true)
@@ -201,11 +223,11 @@ public class Program
                 {
                     if (notesInput.EndsWith(".mid", StringComparison.OrdinalIgnoreCase) || notesInput.EndsWith(".midi", StringComparison.OrdinalIgnoreCase))
                     {
-                        ProcessMidiFile(notesInput, keyInput!, condense, omitDuplicates, preserveStructure);
+                        ProcessMidiFile(notesInput, keyInput!, condense, omitDuplicates, preserveStructure, shortestDistance);
                     }
                     else
                     {
-                        ProcessInput(notesInput, keyInput!, condense, omitDuplicates, preserveStructure);
+                        ProcessInput(notesInput, keyInput!, condense, omitDuplicates, preserveStructure, shortestDistance);
                     }
                 }
                 catch (Exception ex)
@@ -221,23 +243,23 @@ public class Program
         Console.WriteLine("Goodbye!");
     }
 
-    public static List<List<Note>> ProcessInput(string notesInput, string keyInput, bool condense = false, bool omitDuplicates = false, bool preserveStructure = false)
+    public static List<List<Note>> ProcessInput(string notesInput, string? keyInput, bool condense = false, bool omitDuplicates = false, bool preserveStructure = false, bool shortestDistance = false)
     {
-        return ProcessInputInternal(notesInput, keyInput, condense, omitDuplicates, preserveStructure);
+        return ProcessInputInternal(notesInput, keyInput, condense, omitDuplicates, preserveStructure, shortestDistance);
     }
 
-    public static List<List<Note>> ProcessNotes(List<List<Note>> notes, string keyInput, bool condense = false, bool omitDuplicates = false, bool preserveStructure = false, int? customAxisSum = null)
+    public static List<List<Note>> ProcessNotes(List<List<Note>> notes, string? keyInput, bool condense = false, bool omitDuplicates = false, bool preserveStructure = false, bool shortestDistance = false, int? customAxisSum = null)
     {
-        return ProcessInputInternal(notes, keyInput, condense, omitDuplicates, preserveStructure, customAxisSum);
+        return ProcessInputInternal(notes, keyInput, condense, omitDuplicates, preserveStructure, shortestDistance, customAxisSum);
     }
 
-    private static List<List<Note>> ProcessInputInternal(string notesInput, string keyInput, bool condense = false, bool omitDuplicates = false, bool preserveStructure = false, int? customAxisSum = null)
+    private static List<List<Note>> ProcessInputInternal(string notesInput, string? keyInput, bool condense = false, bool omitDuplicates = false, bool preserveStructure = false, bool shortestDistance = false, int? customAxisSum = null)
     {
         var hasExplicitOctaves = Regex.IsMatch(notesInput, @"\d");
         var groups = notesInput.Split('|', StringSplitOptions.TrimEntries | StringSplitOptions.RemoveEmptyEntries);
         if (groups.Length is 0) return [];
 
-        var initialKeyContext = KeyContext.Parse(keyInput);
+        var initialKeyContext = string.IsNullOrWhiteSpace(keyInput) ? KeyContext.Parse("C Major") : KeyContext.Parse(keyInput);
         var currentKeyContext = initialKeyContext;
 
         var chordGroups = new List<List<Note>>();
@@ -336,13 +358,58 @@ public class Program
             }
         }
 
-        return ProcessInputInternal(chordGroups, keyInput, condense, omitDuplicates, preserveStructure, customAxisSum, hasExplicitOctaves, originalNames, keyContextsPerGroup, modulationsPerGroup, isChordMode);
+        return ProcessInputInternal(chordGroups, keyInput, condense, omitDuplicates, preserveStructure, shortestDistance, customAxisSum, hasExplicitOctaves, originalNames, keyContextsPerGroup, modulationsPerGroup, isChordMode);
     }
 
-    private static List<List<Note>> ProcessInputInternal(List<List<Note>> chordGroups, string keyInput, bool condense = false, bool omitDuplicates = false, bool preserveStructure = false, int? customAxisSum = null, bool hasExplicitOctaves = true, List<string>? originalNames = null, List<KeyContext>? keyContextsPerGroup = null, List<string?>? modulationsPerGroup = null, bool isChordMode = false)
+    private static void DisplayInferenceResult(InferenceResult result)
     {
+        Console.WriteLine($"Inferred Key: {result.Key} (Confidence: {result.Confidence:P0})");
+        if (result.Confidence < 0.2 && result.Candidates.Count > 1)
+        {
+            Console.ForegroundColor = ConsoleColor.Yellow;
+            Console.WriteLine("Note: The key is ambiguous. Other strong candidates:");
+            foreach (var candidate in result.Candidates.Skip(1).Take(2))
+            {
+                Console.WriteLine($"  - {candidate.Key}");
+            }
+            Console.WriteLine("If the result is unexpected, try specifying the key manually.");
+            Console.ResetColor();
+        }
+    }
+
+    private static List<List<Note>> ProcessInputInternal(List<List<Note>> chordGroups, string? keyInput, bool condense = false, bool omitDuplicates = false, bool preserveStructure = false, bool shortestDistance = false, int? customAxisSum = null, bool hasExplicitOctaves = true, List<string>? originalNames = null, List<KeyContext>? keyContextsPerGroup = null, List<string?>? modulationsPerGroup = null, bool isChordMode = false)
+    {
+        if (chordGroups is []) return [];
+
+        if (string.IsNullOrWhiteSpace(keyInput))
+        {
+            if (chordGroups.Any())
+            {
+                var result = KeyInferrer.InferWithConfidence(chordGroups);
+                var inferredKey = result.Key;
+                keyInput = inferredKey.ToString();
+                DisplayInferenceResult(result);
+                
+                // Re-spell original notes now that we know the real key
+                for (int i = 0; i < chordGroups.Count; i++)
+                {
+                    chordGroups[i] = chordGroups[i].Select(n => Note.FromAbsolutePitch(n.AbsolutePitch, inferredKey)).ToList();
+                    // Also re-identify original names if they were unknown
+                    if (originalNames != null && (string.IsNullOrEmpty(originalNames[i]) || originalNames[i] == "Unknown"))
+                    {
+                        var name = Chord.Identify(chordGroups[i], inferredKey);
+                        if (name != "Unknown") originalNames[i] = name;
+                    }
+                }
+            }
+            else
+            {
+                keyInput = "C Major";
+            }
+        }
+
         if (originalNames == null) originalNames = chordGroups.Select(g => "").ToList();
-        if (keyContextsPerGroup == null) keyContextsPerGroup = chordGroups.Select(g => KeyContext.Parse(keyInput)).ToList();
+        if (keyContextsPerGroup == null) keyContextsPerGroup = chordGroups.Select(g => KeyContext.Parse(keyInput!)).ToList();
         if (modulationsPerGroup == null) modulationsPerGroup = chordGroups.Select(g => (string?)null).ToList();
 
         // Calculate a global axis based on the entire progression to prevent large jumps
@@ -379,7 +446,8 @@ public class Program
                 originalNotes, 
                 keyStr, 
                 customAxisSum: globalAxisSum,
-                preserveStructure: preserveStructure);
+                preserveStructure: preserveStructure,
+                shortestDistance: shortestDistance);
             
             // Re-apply naming based on negative context to ensure correct spelling of chromatic notes
             mappedNotes = mappedNotes.Select(n => {
@@ -403,9 +471,10 @@ public class Program
             mappedNotes = mappedNotes.Select(n => n.Simplify()).ToList();
 
             // Match the output average octave to the input average octave to preserve register
+            // Skip this if shortestDistance is enabled, as it performs its own octave selection per-note
             var inputAvgOctave = originalNotes.Average(n => n.Octave);
             var mappedAvgOctave = mappedNotes.Average(n => n.Octave);
-            var octaveShift = (int)Math.Round(inputAvgOctave - mappedAvgOctave);
+            var octaveShift = shortestDistance ? 0 : (int)Math.Round(inputAvgOctave - mappedAvgOctave);
             
             if (octaveShift != 0)
             {

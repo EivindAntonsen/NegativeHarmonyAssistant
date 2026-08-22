@@ -2,7 +2,7 @@
 
 public class HarmonyMapper
 {
-    public static (List<Note> MappedNotes, KeyContext NegativeKeyContext) MapNegativeWithContext(IEnumerable<Note> notes, string keyString, int? customAxisSum = null, bool preserveStructure = false)
+    public static (List<Note> MappedNotes, KeyContext NegativeKeyContext) MapNegativeWithContext(IEnumerable<Note> notes, string keyString, int? customAxisSum = null, bool preserveStructure = false, bool shortestDistance = false)
     {
         var noteList = notes.ToList();
         if (noteList is []) return ([], null!);
@@ -42,7 +42,20 @@ public class HarmonyMapper
         if (!preserveStructure)
         {
             var mapped = noteList.Select(note => {
-                var m = Note.FromAbsolutePitch(axisSum - note.AbsolutePitch, negativeKeyContext, finalPreferSharps);
+                int targetPitch;
+                if (shortestDistance)
+                {
+                    var reflectedPC = (axisSum - note.AbsolutePitch + 1200) % 12;
+                    var p1 = note.AbsolutePitch + (reflectedPC - note.AbsolutePitch % 12 + 12) % 12;
+                    var p2 = note.AbsolutePitch + (reflectedPC - note.AbsolutePitch % 12 - 12) % 12;
+                    targetPitch = Math.Abs(p1 - note.AbsolutePitch) <= Math.Abs(p2 - note.AbsolutePitch) ? p1 : p2;
+                }
+                else
+                {
+                    targetPitch = axisSum - note.AbsolutePitch;
+                }
+
+                var m = Note.FromAbsolutePitch(targetPitch, negativeKeyContext, finalPreferSharps);
                 return new Note
                 {
                     NoteName = m.NoteName,
@@ -148,8 +161,8 @@ public class HarmonyMapper
         return tonicBase + dominantBase;
     }
 
-    public static List<Note> MapNegative(IEnumerable<Note> notes, string keyString, bool preserveStructure = false)
+    public static List<Note> MapNegative(IEnumerable<Note> notes, string keyString, bool preserveStructure = false, bool shortestDistance = false)
     {
-        return MapNegativeWithContext(notes, keyString, preserveStructure: preserveStructure).MappedNotes;
+        return MapNegativeWithContext(notes, keyString, preserveStructure: preserveStructure, shortestDistance: shortestDistance).MappedNotes;
     }
 }

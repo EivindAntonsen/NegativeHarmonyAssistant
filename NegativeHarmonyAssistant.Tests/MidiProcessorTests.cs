@@ -175,9 +175,9 @@ public class MidiProcessorTests
     }
 
     [Fact]
-    public void ExportFile_ExistingFile_ShouldOverwrite()
+    public void ExportFile_ExistingFile_ShouldCreateNewFile()
     {
-        var tempFile = Path.GetTempFileName() + ".mid";
+        var tempFile = Path.Combine(Path.GetTempPath(), Guid.NewGuid().ToString() + ".mid");
         var tracks = new List<List<List<Note>>>
         {
             new List<List<Note>>
@@ -186,6 +186,7 @@ public class MidiProcessorTests
             }
         };
 
+        string? secondFile = null;
         try
         {
             // Create a dummy file first
@@ -193,18 +194,51 @@ public class MidiProcessorTests
             Assert.True(File.Exists(tempFile));
 
             // Export to the same path
-            MidiProcessor.ExportFile(tempFile, tracks);
+            secondFile = MidiProcessor.ExportFile(tempFile, tracks);
 
-            // Verify it's now a valid MIDI file
-            var result = MidiProcessor.AnalyzeFile(tempFile);
+            // Verify it created a new path
+            Assert.NotEqual(tempFile, secondFile);
+            Assert.Contains("(1)", secondFile);
+            Assert.True(File.Exists(secondFile));
+
+            // Original file should still be the dummy file
+            Assert.Equal("This is not a MIDI file", File.ReadAllText(tempFile));
+
+            // Verify the new file is a valid MIDI file
+            var result = MidiProcessor.AnalyzeFile(secondFile);
             Assert.True(result.Success);
-            Assert.Equal("Found notes and extracted sequence from multiple tracks.", result.Message);
-            Assert.Single(result.Tracks);
-            Assert.Single(result.Tracks[0]);
         }
         finally
         {
             if (File.Exists(tempFile)) File.Delete(tempFile);
+            if (secondFile != null && File.Exists(secondFile)) File.Delete(secondFile);
+        }
+    }
+
+    [Fact]
+    public void ExportFile_MultipleCollisions_ShouldIncrementCounter()
+    {
+        var baseFile = Path.Combine(Path.GetTempPath(), Guid.NewGuid().ToString() + ".mid");
+        var collision1 = Path.Combine(Path.GetDirectoryName(baseFile)!, Path.GetFileNameWithoutExtension(baseFile) + " (1).mid");
+        
+        var tracks = new List<List<List<Note>>> { new List<List<Note>> { new List<Note> { Note.FromAbsolutePitch(60) } } };
+
+        try
+        {
+            File.WriteAllText(baseFile, "base");
+            File.WriteAllText(collision1, "collision1");
+
+            var resultFile = MidiProcessor.ExportFile(baseFile, tracks);
+
+            Assert.Contains("(2)", resultFile);
+            Assert.True(File.Exists(resultFile));
+            
+            if (File.Exists(resultFile)) File.Delete(resultFile);
+        }
+        finally
+        {
+            if (File.Exists(baseFile)) File.Delete(baseFile);
+            if (File.Exists(collision1)) File.Delete(collision1);
         }
     }
 

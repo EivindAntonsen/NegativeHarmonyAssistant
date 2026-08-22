@@ -1,5 +1,6 @@
 ﻿using Melanchall.DryWetMidi.Core;
 using Melanchall.DryWetMidi.Interaction;
+using System.IO;
 using Melanchall.DryWetMidi.Common;
 using Melanchall.DryWetMidi.Tools;
 
@@ -111,7 +112,7 @@ public class MidiProcessor
         }
     }
 
-    public static void ExportFile(string filePath, List<List<List<Note>>> tracks, TimeDivision? timeDivision = null, IEnumerable<MidiEvent>? timeSignatureEvents = null)
+    public static string ExportFile(string filePath, List<List<List<Note>>> tracks, TimeDivision? timeDivision = null, IEnumerable<MidiEvent>? timeSignatureEvents = null)
     {
         var midiFile = new MidiFile();
         if (timeDivision != null)
@@ -194,6 +195,22 @@ public class MidiProcessor
             midiFile.Chunks.Add(trackChunk);
         }
 
-        midiFile.Write(filePath, true);
+        var finalPath = filePath;
+        if (File.Exists(finalPath))
+        {
+            var directory = Path.GetDirectoryName(filePath);
+            var fileName = Path.GetFileNameWithoutExtension(filePath);
+            var extension = Path.GetExtension(filePath);
+            int counter = 1;
+
+            while (File.Exists(finalPath))
+            {
+                var newFileName = $"{fileName} ({counter++}){extension}";
+                finalPath = string.IsNullOrEmpty(directory) ? newFileName : Path.Combine(directory, newFileName);
+            }
+        }
+
+        midiFile.Write(finalPath, true);
+        return finalPath;
     }
 }

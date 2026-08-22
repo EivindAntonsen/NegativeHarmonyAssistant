@@ -1,4 +1,4 @@
-# Negative Harmony Assistant
+D ha# Negative Harmony Assistant
  
 ![Build Status](https://github.com/EivindAntonsen/NegativeHarmonyAssistant/actions/workflows/ci-cd.yml/badge.svg)
 ![Test Coverage](https://img.shields.io/badge/Coverage-100%25-brightgreen)
@@ -50,19 +50,23 @@ Run the tool without arguments to enter interactive mode:
 dotnet run --project NegativeHarmonyAssistant
 ```
 You will be prompted to:
-- Select a **Key** (e.g., `C Major`, `Eb Minor`).
-- Set **Options** (Condense chords, Omit duplicates, retain original contour).
+- Select a **Key** (e.g., `C Major`, `Eb Minor`) [optional, leave empty to infer from notes].
+- Set **Options** (Condense chords, Omit duplicates, retain original contour, shortest distance).
 - Enter **Notes/Chords** or **Progressions**.
 - Or specify a file location for a midi file to read. Will not convert drum tracks.
 
 ### 2. One-Shot Mode
-Map a specific sequence directly from your terminal:
+Map a specific sequence directly from your terminal (Key is optional):
 ```bash
 dotnet run --project NegativeHarmonyAssistant "C, E, G, B" "C Major"
 ```
+Or with auto-inference:
+```bash
+dotnet run --project NegativeHarmonyAssistant "C, E, G, B"
+```
 
 ### 3. MIDI Processing
-Process a MIDI file to extract its chord progression and export the negative harmony version:
+Process a MIDI file to extract its chord progression and export the negative harmony version (Key is optional):
 ```bash
 dotnet run --project NegativeHarmonyAssistant "path/to/your.mid" "C Major"
 ```
@@ -70,12 +74,13 @@ The tool will:
 1. Extract notes from the MIDI file (excluding drum tracks).
 2. Group notes by start time into a chord progression.
 3. Calculate and display the negative harmony progression in the console.
-4. Export a new MIDI file (e.g., `your_negative.mid`) with the mapped notes.
+4. Export a new MIDI file (e.g., `your_negative.mid`) with the mapped notes. If the file already exists, it will automatically append a counter (e.g., `your_negative (1).mid`).
 
 ## Advanced Options
 
 - **Condense Chords**: Automatically brings spread-out reflections into close-voiced arrangements (e.g., voicing a negative chord within a single octave).
 - **Omit Duplicates**: Removes redundant pitch classes (e.g., converting a 5-note voicing with doubled root into a 4-note chord).
+- **Shortest Distance**: Ensures reflected notes go to the closest possible octave of the target pitch class, minimizing large leaps and preserving the original register more strictly than standard reflection.
 
 ## Supported Chords
 

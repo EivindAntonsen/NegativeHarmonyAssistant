@@ -110,4 +110,25 @@ public class KeyContext
         NoteName.B => 11,
         _ => throw new ArgumentOutOfRangeException(nameof(name))
     };
+
+    public override string ToString()
+    {
+        var accStr = Tonic.Accidental switch
+        {
+            Accidental.DoubleSharp => "##",
+            Accidental.Sharp => "#",
+            Accidental.DoubleFlat => "bb",
+            Accidental.Flat => "b",
+            _ => ""
+        };
+        var modeStr = Mode switch
+        {
+            Mode.Major => "Major",
+            Mode.Minor => "Minor",
+            Mode.HarmonicMinor => "Harmonic Minor",
+            Mode.HarmonicMajor => "Harmonic Major",
+            _ => Mode.ToString()
+        };
+        return $"{Tonic.NoteName}{accStr} {modeStr}";
+    }
 }
